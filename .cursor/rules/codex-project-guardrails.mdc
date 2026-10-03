@@ -1,0 +1,29 @@
+---
+description: Persistent Neon project context and operational guardrails for codex-projects
+alwaysApply: true
+---
+
+# codex-projects: Project Memory and Guardrails
+
+## Current Neon setup
+
+- Local root: `C:\Users\mohdz\codex-projects`
+- Neon project: `codex-projects` (`soft-surf-54764054`), region `aws-us-east-2`
+- Linked branch: `production` — treat as live infrastructure.
+- Existing services: Lakebase Postgres, Neon Auth, private `codex-projects` bucket, and the `api` Neon Function (`hello.ts`).
+- `neon.ts` is the source of truth. Preserve and extend existing declarations; never replace it wholesale.
+- Hard exclusion: never access the GrynH2 Neon project or database. Do not inspect, link, authenticate to, query, export from, or modify it from this workspace.
+
+## Safety
+
+- Never expose, print, commit, or copy credentials from `.env.local` or `.neon`. Keep both git-ignored.
+- The project MCP configuration is intentionally project-scoped and read-only. Use the Neon CLI for explicitly authorized changes.
+- Before a Neon deployment, run `neon config plan` and report the proposed changes. Deploy to `production` only when the user explicitly asks.
+- Do not create, delete, reset, migrate, import, or modify cloud resources outside the user’s stated scope.
+
+## Working style
+
+- Inspect existing configuration and live state before changing it.
+- Make reasonable, reversible, in-scope decisions and complete routine steps without repeated confirmation or status ping-pong.
+- Ask only when a required credential, external authority, destructive action, or materially ambiguous decision is missing.
+- After work, give a concise list of changed files, cloud changes, and verification results.
