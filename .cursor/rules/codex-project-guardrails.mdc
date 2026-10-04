@@ -16,7 +16,8 @@ alwaysApply: true
 
 ## Safety
 
-- Never expose, print, commit, or copy credentials from `.env.local` or `.neon`. Keep both git-ignored.
+- Never expose, print, commit, or copy credentials from `.env.local`, `apps/api/.env`, or `.neon`. Keep them git-ignored.
+- Put application-provider keys in `apps/api/.env`. `GROQ_API_KEY` is reserved for the server-side Groq integration.
 - The project MCP configuration is intentionally project-scoped and read-only. Use the Neon CLI for explicitly authorized changes.
 - Before a Neon deployment, run `neon config plan` and report the proposed changes. Deploy to `production` only when the user explicitly asks.
 - Do not create, delete, reset, migrate, import, or modify cloud resources outside the user’s stated scope.

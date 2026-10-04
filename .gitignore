@@ -1,3 +1,4 @@
 .neon
 .env.local
+apps/api/.env
 node_modules/

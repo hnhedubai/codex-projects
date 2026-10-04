@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Oman Land Tracker</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">PRIVATE RESEARCH CRM</p>
+          <h1>Oman Land Tracker</h1>
+          <p class="subtitle">Find allocation-ready land and the people who can move the deal forward.</p>
+        </div>
+        <div class="environment"><span></span> Development branch</div>
+      </header>
+
+      <section class="metrics" aria-label="Portfolio metrics">
+        <article><p>Active projects</p><strong id="project-count">—</strong><small>Reusable country workspaces</small></article>
+        <article><p>Candidate parcels</p><strong id="parcel-count">—</strong><small>Only 10 MW+ IT-load candidates</small></article>
+        <article><p>Hard gates</p><strong>0</strong><small>Evidence checks are next</small></article>
+        <article><p>JEV votes</p><strong>0</strong><small>Advisory, never final approval</small></article>
+      </section>
+
+      <nav aria-label="Tracker sections">
+        <a class="active" href="#workspace">Dashboard</a><a href="#parcels">Parcels</a><a href="#workspace">Projects</a>
+        <span>Requirements</span><span>Organisations</span><span>Contacts</span><span>Evidence</span><span>Research runs</span><span>Rejected</span>
+      </nav>
+
+      <section class="grid" id="workspace">
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">START HERE</p><h2>Research projects</h2></div><button id="toggle-project">New project</button></div>
+          <form id="project-form" class="hidden">
+            <label>Project name<input name="name" required value="Oman data-centre land allocation" /></label>
+            <label>Country ISO 2<input name="countryIso2" required minlength="2" maxlength="2" value="OM" /></label>
+            <button type="submit">Create project</button>
+          </form>
+          <div id="projects" class="records" aria-live="polite"></div>
+        </article>
+
+        <article class="panel" id="parcels">
+          <div class="panel-heading"><div><p class="eyebrow">MINIMUM 10 MW IT LOAD</p><h2>Candidate parcels</h2></div><button id="toggle-parcel">Add parcel</button></div>
+          <form id="parcel-form" class="hidden">
+            <label>Research project<select name="researchProjectId" id="project-selector" required></select></label>
+            <label>Parcel name<input name="name" required placeholder="e.g. Barka industrial candidate" /></label>
+            <label>Target IT load (MW)<input name="targetItLoadMw" required type="number" min="10" step="0.1" value="10" /></label>
+            <button type="submit">Create parcel</button>
+          </form>
+          <div id="parcels-list" class="records" aria-live="polite"></div>
+        </article>
+      </section>
+      <p id="notice" role="status"></p>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
