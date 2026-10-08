@@ -1,0 +1,9 @@
+#!/bin/sh
+# .githooks/pre-commit - typography gate
+command -v node >/dev/null 2>&1 || exit 0
+node scripts/audit-tokens.mjs --path apps/web/public --props font-size,font-weight --max 1 || {
+  echo ""
+  echo "Typography check failed: use a --text-* role token instead of a raw font-size."
+  echo "Run: npm run check:typography"
+  exit 1
+}

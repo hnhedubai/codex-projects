@@ -1,6 +1,8 @@
 {
   "type": "module",
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
+    "check:typography": "node scripts/audit-tokens.mjs --path apps/web/public --props font-size,font-weight --max 1",
     "db:migrate": "node apps/api/scripts/migrate.js",
     "dev:tracker": "node apps/api/src/local-server.js",
     "test": "node --test apps/api/test/*.test.js"
