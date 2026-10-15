@@ -18,8 +18,8 @@ export function sanitizeContact(input){
  return out;
 }
 export async function createContactStore(file=defaultStoreFile){
- let state={schemaVersion:1,overrides:{},checks:{},history:[],providerHistory:[],bulkTask:null};
- try{const parsed=JSON.parse(await readFile(file,'utf8'));if(parsed.schemaVersion!==1||!parsed.overrides||!parsed.checks||!Array.isArray(parsed.history))throw Error('Invalid contact store');state=parsed;if(!Array.isArray(state.providerHistory))state.providerHistory=[];}catch(e){if(e.code!=='ENOENT')throw Error('Contact store cannot be loaded safely. Restore it from backup; it has not been overwritten.');}
+ let state={schemaVersion:1,overrides:{},removed:{},checks:{},history:[],providerHistory:[],bulkTask:null};
+ try{const parsed=JSON.parse(await readFile(file,'utf8'));if(parsed.schemaVersion!==1||!parsed.overrides||!parsed.checks||!Array.isArray(parsed.history))throw Error('Invalid contact store');state=parsed;if(!state.removed||typeof state.removed!=='object')state.removed={};if(!Array.isArray(state.providerHistory))state.providerHistory=[];}catch(e){if(e.code!=='ENOENT')throw Error('Contact store cannot be loaded safely. Restore it from backup; it has not been overwritten.');}
  const seeds=Object.fromEntries(projects.map(p=>[p.id,p.contacts.map((c,i)=>({...c,id:`${p.id}-${i}`,emails:c.email?[normalizeEmail(c.email)]:[],phones:Array.isArray(c.phones)?c.phones:[],association:/shared|company mailbox|project mailbox/i.test(c.status)?'shared':'unconfirmed',source:c.source||'',notes:'',version:1,original:structuredClone(c)}))]));
  const registry=structuredClone(projectRegistry);
  let queue=Promise.resolve();
@@ -35,9 +35,10 @@ export async function createContactStore(file=defaultStoreFile){
    const name=String(seed.name||'').trim().toLowerCase();
    if(!existingIds.has(seed.id)&&!existingNames.has(name)){all.push(structuredClone(seed));existingNames.add(name);}
   }
-  return all;
+  const removed=new Set(current.removed?.[projectId]||[]);
+  return all.filter(contact=>!removed.has(contact.id));
  };
- const contacts=projectId=>mergedContacts(projectId);
+  const contacts=projectId=>mergedContacts(projectId);
  return {
   contacts,
   snapshot(){return {contacts:Object.fromEntries(projects.map(p=>[p.id,contacts(p.id)])),checks:structuredClone(state.checks),registry};},
@@ -55,6 +56,17 @@ export async function createContactStore(file=defaultStoreFile){
    next.history.push({type:'contact-edit',projectId,at:value.updatedAt,previous:old||null,id:value.id});
    if(old)all[all.findIndex(c=>c.id===old.id)]=value;else all.push(value);
    next.overrides[projectId]=all;return value;
+  });},
+  async remove(projectId,input){contacts(projectId);return edit(next=>{
+   const all=mergedContacts(projectId,next);
+   const old=input?.id?all.find(c=>c.id===input.id):null;
+   if(!old)throw Error('Contact not found.');
+   if(input.version!==old.version)throw Error('This contact changed. Refresh before deleting it.');
+   all.splice(all.findIndex(c=>c.id===old.id),1);
+   next.overrides[projectId]=all;
+   next.removed[projectId]=[...new Set([...(next.removed[projectId]||[]),old.id])];
+   next.history.push({type:'contact-delete',projectId,at:new Date().toISOString(),previous:old,id:old.id});
+   return {id:old.id,name:old.name};
   });}
  };
 }

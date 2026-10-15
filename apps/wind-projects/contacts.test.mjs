@@ -31,6 +31,13 @@ test('contact edits persist, retain originals/history, and do not transfer email
  const seed=reloaded.contacts('theodore')[0];await reloaded.save('theodore',{...seed,name:'Edited name'});assert.equal(reloaded.contacts('theodore')[0].original.name,seed.name);
  const saved=JSON.parse(await readFile(file,'utf8'));assert.ok(saved.history.length>=3);
 });
+test('contact deletion removes the active card, preserves history and survives reload',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'wind-contact-delete-'));const file=path.join(dir,'contacts.json');const store=await createContactStore(file);
+ const c=await store.save('berwick-b',input);const deleted=await store.remove('berwick-b',{id:c.id,version:c.version});
+ assert.deepEqual(deleted,{id:c.id,name:c.name});assert.equal(store.contacts('berwick-b').some(x=>x.id===c.id),false);
+ const reloaded=await createContactStore(file);assert.equal(reloaded.contacts('berwick-b').some(x=>x.id===c.id),false);
+ const saved=JSON.parse(await readFile(file,'utf8'));assert.ok(saved.history.some(x=>x.type==='contact-delete'&&x.id===c.id));
+});
 test('API blocks cross-origin writes, caches checks and supports explicit recheck',async()=>{
  const dir=await mkdtemp(path.join(tmpdir(),'wind-api-test-'));const store=await createContactStore(path.join(dir,'contacts.json'));let calls=0;
  const provider={enabled:true,verify:async email=>{calls++;return interpretResult(raw(email),email);}};
@@ -47,6 +54,8 @@ test('API blocks cross-origin writes, caches checks and supports explicit rechec
   assert.equal(calls,1);
   await fetch(base+'/verify',{method:'POST',headers,body:JSON.stringify({...request,force:true})});assert.equal(calls,2);
   assert.equal((await fetch(base+'/verify',{method:'POST',headers,body:JSON.stringify({...request,email:'outsider@example.com'})})).status,422);
+  const deleted=await (await fetch(base+'/delete',{method:'POST',headers,body:JSON.stringify({projectId:'berwick-b',contactId:save.contact.id,version:save.contact.version})})).json();assert.equal(deleted.deleted.id,save.contact.id);
+  assert.equal((await fetch(base+'/verify',{method:'POST',headers,body:JSON.stringify(request)})).status,422);
   assert.equal((await fetch(origin+'/private/contacts.json')).status,404);
  }finally{await new Promise(r=>server.close(r));}
 });

@@ -42,6 +42,7 @@ export function createServer({storePromise=createContactStore(),providerPromise=
     let input;try{input=JSON.parse(body);}catch{return json(400,{error:'Invalid JSON.'});}
     if(!input||typeof input!=='object')return json(400,{error:'Invalid request.'});
     if(pathname==='/wind-projects/api/contacts/save'){const contact=await store.save(input.projectId,input.contact);return json(200,{contact});}
+    if(pathname==='/wind-projects/api/contacts/delete'){const deleted=await store.remove(input.projectId,{id:input.contactId,version:input.version});return json(200,{deleted});}
     if(pathname==='/wind-projects/api/contacts/verify'){
      const contact=store.contacts(input.projectId).find(c=>c.id===input.contactId);
      const email=normalizeEmail(input.email);
