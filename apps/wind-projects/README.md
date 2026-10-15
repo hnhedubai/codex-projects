@@ -2,7 +2,7 @@
 
 Start from this directory with `npm start`, then open http://localhost:9601/wind-projects . Node.js is the only runtime dependency. Run `npm test` for data and HTTP checks.
 
-The server binds to 127.0.0.1 only, does not replace other services, and exits if its port is occupied. No CRM, Google Sheets, outbound email service or production database is connected. An explicitly requested Reoon check sends the saved email addresses to Reoon; it does not send an email message.
+The server binds to 127.0.0.1 only, does not replace other services, and exits if its port is occupied. No CRM, Google Sheets or production database is connected. Outbound email goes only through Pulse when you click Send on a project's Outreach tab (see Pulse sending). An explicitly requested Reoon check sends the saved email addresses to Reoon; it does not send an email message.
 
 Wind Projects uses **http://localhost:9601/wind-projects** by default. Set `WIND_PORT` only when a different port is intentionally required.
 
@@ -20,10 +20,22 @@ Wind Projects uses **http://localhost:9601/wind-projects** by default. Set `WIND
 
 ## Future integration boundary
 
-Keep project IDs stable. The local contact API is independent of the hydrogen/CRM applications. No background research, scheduling or outbound messaging is implemented.
+Keep project IDs stable. The local contact API is independent of the hydrogen/CRM applications. No background research or scheduling is implemented; email is sent only on an explicit Send click.
 
 ## Reoon configuration
 
 Set `REOON_API_KEY`, `APOLLO_API_KEY` and/or `HUNTER_API_KEY` in the server process environment. Alternatively set `REOON_ENV_FILE` to an existing trusted local env file; the loader reads only these provider keys and does not copy them. In this repository, the local fallback files are `apps/api/.env` and the repository `.env.local`. Keys are never returned to the browser. Apollo enrichment and Hunter finding/verifying are explicit per-contact actions and may consume provider credits; results are saved to local provider history and never overwrite manual contact fields automatically. Restart the server after changing keys.
 
 Initial imported contacts were checked using one bounded 18-address bulk task on 15 October 2026. Two user-reported invalid RWE addresses were skipped. The one-off `verify-existing.mjs` script records its task ID before polling to avoid duplicate credit spending; it is not an automatic scheduled job.
+
+## Pulse sending
+
+Each project's Outreach tab has a **Send with Pulse** card listing that project's contact emails. It sends that project's draft through `POST /api/pulse/external/send` on workspace.grynh2.com (GrynH2 Pulse: your mailbox, your signature, logged in Pulse Sent with tracking).
+
+- Set `PULSE_SEND_KEY` (a `pulse_send` key from GrynH2 Gear → Integration API keys) and optionally `PULSE_API_URL` (default `https://api.grynh2.com`), then restart. The key stays on the server.
+- The first line of the draft must be `Subject: …`. Blank lines separate paragraphs; lines starting with `- ` become bullets; http(s) URLs become links. Remove `[placeholder]` lines — Pulse adds the signature.
+- **One by one** sends a separate email per person with "Dear <name>,"; **One email** uses To/CC/BCC (extra To addresses go to CC). Up to 10 recipients per click, 90 s total.
+- Only Reoon-safe personal addresses start ticked. Pulse's recipient gate makes the final decision; blocked addresses show the reason.
+- Each email has an idempotency key, so re-clicking Send with the same draft and person does not send a duplicate. Edit the draft to send again.
+- A successful send sets the project's email status to "Email sent" and workflow to "Contacted" (forward only). History is saved in `private/sends.json`.
+- Sends count toward the DreamHost hourly mail quota.
