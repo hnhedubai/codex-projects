@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {randomBytes} from 'node:crypto';
 import {createContactStore} from './contact-store.mjs';
+import {projectRegistry} from './dist/data.js';
 import {createReoon,loadReoonKey,normalizeEmail} from './reoon.mjs';
 import {createEnrichmentProviders} from './enrichment.mjs';
 export const root = fileURLToPath(new URL('./dist/', import.meta.url));
@@ -25,6 +26,11 @@ export function createServer({storePromise=createContactStore(),providerPromise=
    if(!allowed.has(req.headers.host)|| (req.headers.origin&&!allowed.has(req.headers.origin.replace(/^http:\/\//,''))) )return json(403,{error:'Local same-origin requests only.'});
    try{
     const store=await storePromise,provider=await providerPromise,enrichment=await enrichmentPromise;
+    if(pathname==='/wind-projects/api/health'&&req.method==='GET'){
+     const storeRegistry=store.snapshot().registry;
+     const aligned=storeRegistry.key===projectRegistry.key;
+     return json(aligned?200:503,{ok:aligned,registry:projectRegistry,storeRegistry,reason:aligned?'':'Project registry is stale. Restart the Wind Projects server.'});
+    }
     if(pathname==='/wind-projects/api/contacts'&&req.method==='GET')return json(200,{...store.snapshot(),token,reoonEnabled:provider.enabled,apolloEnabled:enrichment.apolloEnabled,hunterEnabled:enrichment.hunterEnabled});
     if(req.method!=='POST')return json(405,{error:'Method not supported.'});
     if(req.headers['x-wind-token']!==token||!req.headers['content-type']?.startsWith('application/json'))return json(403,{error:'Refresh the workspace before making changes.'});

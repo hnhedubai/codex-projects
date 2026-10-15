@@ -1,9 +1,12 @@
 import {readFile} from 'node:fs/promises';
-export async function loadReoonKey(){
- if(process.env.REOON_API_KEY)return process.env.REOON_API_KEY;
- if(process.env.REOON_ENV_FILE){const s=await readFile(process.env.REOON_ENV_FILE,'utf8');const line=s.split(/\r?\n/).find(x=>/^\s*REOON_API_KEY\s*=/.test(x));return line?.slice(line.indexOf('=')+1).trim().replace(/^(['"])(.*)\1$/,'$2')||'';}
+const envValue=(source,name)=>{const line=source.split(/\r?\n/).find(x=>new RegExp(`^\\s*${name}\\s*=`).test(x));if(!line)return '';const value=line.slice(line.indexOf('=')+1).trim();return value.replace(/^(['"])(.*)\1(?:\s+#.*)?$/,'$2').replace(/\s+#.*$/,'').trim();};
+export async function loadProviderKey(name){
+ if(process.env[name]?.trim())return process.env[name].trim();
+ const candidates=[process.env.REOON_ENV_FILE,new URL('../api/.env',import.meta.url),new URL('../../.env.local',import.meta.url)].filter(Boolean);
+ for(const candidate of candidates){try{const source=await readFile(candidate,'utf8');const value=envValue(source,name);if(value)return value;}catch(e){if(!['ENOENT','EACCES'].includes(e.code))throw e;}}
  return '';
 }
+export const loadReoonKey=()=>loadProviderKey('REOON_API_KEY');
 export const normalizeEmail=value=>String(value||'').trim().toLowerCase();
 export const isEmail=value=>typeof value==='string'&&value.length<=254&&/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(value);
 const statuses=new Set(['safe','invalid','disabled','disposable','inbox_full','catch_all','role_account','spamtrap','unknown']);

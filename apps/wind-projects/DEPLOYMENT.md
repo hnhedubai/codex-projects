@@ -52,4 +52,5 @@ and provider-specific host binding.
 4. Move `private/contacts.json` to durable protected storage or a database.
 5. Add authentication before exposing contact data publicly.
 6. Run `npm run wind:test` and verify both the page and `/wind-projects/api/contacts`.
+7. Check `/wind-projects/api/health`; it must return HTTP 200 with `"ok":true`. A registry mismatch must be fixed before using contact editing or provider verification.
 

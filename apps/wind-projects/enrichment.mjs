@@ -1,10 +1,8 @@
-import {readFile} from 'node:fs/promises';
 import {isEmail,normalizeEmail} from './reoon.mjs';
+import {loadProviderKey} from './reoon.mjs';
 
 async function loadKey(name){
- if(process.env[name])return process.env[name];
- if(process.env.REOON_ENV_FILE){const s=await readFile(process.env.REOON_ENV_FILE,'utf8');const line=s.split(/\r?\n/).find(x=>new RegExp(`^\\s*${name}\\s*=`).test(x));return line?.slice(line.indexOf('=')+1).trim().replace(/^(['"])(.*)\1$/,'$2')||'';}
- return '';
+ return loadProviderKey(name);
 }
 const json=async(response,label)=>{let data;try{data=await response.json();}catch{throw Error(`${label} returned an unreadable result.`);}if(!response.ok)throw Error(`${label} request failed (${response.status}): ${data?.message||data?.error||data?.errors?.[0]?.message||'Provider rejected the request.'}`);return data;};
 export async function createEnrichmentProviders({fetchImpl=fetch}={}){
