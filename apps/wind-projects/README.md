@@ -1,10 +1,10 @@
 # Wind Projects — standalone opportunity desk
 
-Start from this directory with `npm start`, then open http://localhost:9600/wind-projects . Node.js is the only runtime dependency. Run `npm test` for data and HTTP checks.
+Start from this directory with `npm start`, then open http://localhost:9601/wind-projects . Node.js is the only runtime dependency. Run `npm test` for data and HTTP checks.
 
 The server binds to 127.0.0.1 only, does not replace other services, and exits if its port is occupied. No CRM, Google Sheets, outbound email service or production database is connected. An explicitly requested Reoon check sends the saved email addresses to Reoon; it does not send an email message.
 
-The existing tracker occupied port 9600 during setup. The independent preview uses **http://localhost:9601/wind-projects** instead. To launch on that port in PowerShell: `$env:WIND_PORT='9601'; npm start`. No existing service was restarted or modified. Using the exact 9600 route later would require an approved route/proxy change in that service, or freeing its port.
+Wind Projects uses **http://localhost:9601/wind-projects** by default. Set `WIND_PORT` only when a different port is intentionally required.
 
 ## Data and storage
 

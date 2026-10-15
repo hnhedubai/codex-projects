@@ -12,7 +12,7 @@ From the repository root:
 npm run wind:start
 ```
 
-Then open `http://localhost:9600/wind-projects`.
+Then open `http://localhost:9601/wind-projects`.
 
 To use another port:
 
@@ -32,7 +32,7 @@ npm run wind:test
 Copy `apps/wind-projects/.env.example` to a private environment file or set
 the variables in the hosting provider. Never commit provider keys.
 
-- `WIND_PORT` — HTTP port supplied by the host; defaults to `9600`.
+- `WIND_PORT` — HTTP port supplied by the host; defaults to `9601`.
 - `REOON_API_KEY` — optional server-side Reoon verification key.
 - `APOLLO_API_KEY` — optional server-side Apollo enrichment key.
 - `HUNTER_API_KEY` — optional server-side Hunter key.
