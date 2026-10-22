@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Supplier-side EN590 counterparties migrated from the former buyer-rejection list. Their presence records a reported role; it does not establish supply allocation or authority.",
+  "counterparties": [
+    {
+      "company": "Exxon Mobil Kazakhstan Inc.",
+      "country": "Kazakhstan",
+      "tradeSide": "Seller",
+      "sellerType": "Authorized marketer / exporter",
+      "supplyAuthority": "Claimed · verify",
+      "chainPosition": "Marketer / exporter",
+      "productSpec": "EN590 10 ppm · reported",
+      "commercialEvidence": "Named supplier for 100,000 MT to Bangladesh Petroleum Corporation",
+      "status": "Supplier lead · authority unverified",
+      "sources": [{"url":"https://online.thedailystar.net/business/news/govt-approves-import-26-lakh-more-tonnes-fuel-4140061","date":"2026","claim":"Named supplier in reported Bangladesh EN590-10 ppm procurement."}]
+    },
+    {
+      "company": "AP Energy Investments Limited",
+      "country": "Unverified",
+      "tradeSide": "Seller",
+      "sellerType": "Trader",
+      "supplyAuthority": "Claimed · verify",
+      "chainPosition": "Trader",
+      "productSpec": "EN590 10 ppm · reported",
+      "commercialEvidence": "Named proposed supplier under BPC emergency procurement",
+      "status": "Supplier lead · authority unverified",
+      "sources": [{"url":"https://en.samakal.com/bangladesh/170848861/proposal-to-import-another--tonnes-of-diesel-approved","date":"2026","claim":"Named proposed supplier; no refinery ownership or mandate confirmed."}]
+    },
+    {
+      "company": "Superstar International (Group) Limited",
+      "country": "Unverified",
+      "tradeSide": "Seller",
+      "sellerType": "Trader",
+      "supplyAuthority": "Claimed · verify",
+      "chainPosition": "Trader",
+      "productSpec": "EN590 Euro-5 10 ppm · reported",
+      "commercialEvidence": "Named proposed supplier for 200,000 MT",
+      "status": "Supplier lead · authority unverified",
+      "sources": [{"url":"https://en.bd-pratidin.com/national/2026/03/27/59590","date":"2026","claim":"Named proposed supplier; product and allocation require verification."}]
+    },
+    {
+      "company": "Majeda Oil Company Limited",
+      "country": "Unverified",
+      "tradeSide": "Seller",
+      "sellerType": "Trader",
+      "supplyAuthority": "Claimed · verify",
+      "chainPosition": "Trader",
+      "productSpec": "EN590 10 ppm · reported",
+      "commercialEvidence": "Named proposed supplier to BPC for 100,000 MT",
+      "status": "Supplier lead · authority unverified",
+      "sources": [{"url":"https://en.samakal.com/bangladesh/170848861/proposal-to-import-another--tonnes-of-diesel-approved","date":"2026","claim":"Named proposed supplier; supply source not stated."}]
+    },
+    {
+      "company": "Archer Energy LLC",
+      "country": "Unverified",
+      "tradeSide": "Seller",
+      "sellerType": "Trader",
+      "supplyAuthority": "Claimed · verify",
+      "chainPosition": "Trader",
+      "productSpec": "EN590 10 ppm · reported",
+      "commercialEvidence": "Named proposed supplier to BPC for 100,000 MT",
+      "status": "Supplier lead · authority unverified",
+      "sources": [{"url":"https://www.tbsnews.net/bangladesh/energy/fuel-supply-accelerate-as-tender-time-cut-from-42-to-10-days-1417831","date":"2026","claim":"Named proposed supplier; authority and product allocation not confirmed."}]
+    },
+    {
+      "company": "DBS Trading House FZCO",
+      "country": "United Arab Emirates",
+      "tradeSide": "Seller",
+      "sellerType": "Trader",
+      "supplyAuthority": "Claimed · verify",
+      "chainPosition": "Trader",
+      "productSpec": "EN590 10 ppm · reported",
+      "commercialEvidence": "Proposed 1,000,000 MT EN590-10 ppm supply",
+      "status": "Supplier lead · approval unconfirmed",
+      "sources": [{"url":"https://www.tbsnews.net/bangladesh/energy/fuel-supply-accelerate-as-tender-time-cut-from-42-to-10-days-1417831","date":"2026","claim":"Reported supply proposal; no refinery ownership or allocation evidence in the cited source."}]
+    }
+  ]
+}

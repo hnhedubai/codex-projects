@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "sends": [
+    {
+      "id": "2083cbf5-20f9-4cf5-8657-29689c7e968b",
+      "at": "2026-10-22T09:33:32.012Z",
+      "status": "done",
+      "module": "investors-jv",
+      "recordId": "wpd",
+      "recordName": "wpd — German onshore acquisition and cooperation",
+      "mode": "separate",
+      "subject": "wpd — German onshore acquisition and cooperation — Strategic Investment and Partnership",
+      "body": "Dear Project Team,\n\nI am advising an established wind-energy developer on selected international opportunities for equity investment, joint ventures and strategic participation.\n\nI am contacting you regarding wpd — German onshore acquisition and cooperation and would appreciate a brief, non-confidential overview of the project’s current development stage, ownership structure, capital requirements and available partnership opportunities.\n\nFor your review, please find below a brief profile of the developer:\n\nOur partner is a renewable-energy developer with experience in utility-scale wind and hybrid projects, covering development, engineering, construction, grid integration, commissioning and operations. It is currently evaluating equity investments, joint ventures and strategic participation in suitable projects.\n\nPlease direct me to the appropriate person responsible for the project’s partner process.\n\nKind regards,",
+      "recipients": [
+        {
+          "email": "mubashir@hnh.ae",
+          "name": "Muhammad M Mubashir",
+          "field": "to",
+          "origin": "added"
+        },
+        {
+          "email": "hnhedubai@gmail.com",
+          "name": "Mubashir",
+          "field": "to",
+          "origin": "added"
+        }
+      ],
+      "results": [
+        {
+          "emails": [
+            "mubashir@hnh.ae"
+          ],
+          "status": "sent",
+          "httpStatus": 200,
+          "error": "",
+          "emailMessageId": "cf3e97a3-0269-475c-bdff-c1550f443e02",
+          "replay": false
+        },
+        {
+          "emails": [
+            "hnhedubai@gmail.com"
+          ],
+          "status": "sent",
+          "httpStatus": 200,
+          "error": "",
+          "emailMessageId": "9c97ab03-5407-41bb-81ce-e9517eb0ab32",
+          "replay": false
+        }
+      ],
+      "summary": {
+        "sent": 2,
+        "blocked": 0,
+        "failed": 0
+      },
+      "completedAt": "2026-10-22T09:33:49.470Z"
+    }
+  ]
+}
