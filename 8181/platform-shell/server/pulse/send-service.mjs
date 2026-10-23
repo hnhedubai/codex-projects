@@ -28,7 +28,7 @@ export class PulseSendService {
    const pulseVerification=results.map(result=>result.verification).find(value=>value&&typeof value==='object')||null;
    const summary={sent:0,blocked:0,failed:0};for(const result of results)summary[result.status==='sent'||result.status==='blocked'?result.status:'failed']+=result.emails.length;
    const entry=await module.history.complete(id,{results,summary,pulseVerification:pulseVerification||undefined});
-   const pulseDisposableVerification=results.filter(result=>result.httpStatus===422).flatMap(result=>result.verification?.invalid||[]).filter(item=>item?.disposable===true);
+   const pulseDisposableVerification=[...verification.filter(item=>item.allowed!==true&&item.disposable===true).map(item=>({address:item.email,disposable:true,source:'local-reoon'})),...results.filter(result=>result.httpStatus===422).flatMap(result=>result.verification?.invalid||[]).filter(item=>item?.disposable===true)];
    return {id,summary,verification,pulseVerification,pulseDisposableVerification,results:entry.results.map(({emails,status,error})=>({emails,status,error}))};
   }finally{this.#busy=false;}
  }

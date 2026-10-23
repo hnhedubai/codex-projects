@@ -44,3 +44,33 @@ test('recipient icons show verified, invalid, stale, checking and shared mailbox
  controller.verifying.add(email);assert.match(controller.verificationLabel(email),/checking/);controller.verifying.clear();
  controller.verification[email]={...good(email),status:'role_account',isRoleAccount:true};assert.match(controller.verificationLabel(email),/shared mailbox/);
 });
+
+test('fresh local disposable requires address-specific consent and reaches Pulse only after confirmation',async()=>{
+ const email=people[0].email,calls=[];
+ const gate=createReoonSendGate({verify:async()=>[{...good(email),status:'disposable',deliverable:null}]},{register:async()=>{}});
+ const module={key:'ammonia',label:'Ammonia',assertChecks(){},history:{async begin(){return 'attempt';},async complete(id,result){return result;}}};
+ const service=new PulseSendService({verifyRecipients:gate,client:{enabled:true,async send(payload){calls.push(payload);return {status:'sent',httpStatus:200};}}});
+ const input={recordId:'x',mode:'separate',subject:'Enquiry',body:'Hello',recipients:[people[0]]};
+ const blocked=await service.send(module,input);assert.equal(calls.length,0);assert.equal(blocked.summary.blocked,1);assert.equal(blocked.verification[0].disposable,true);
+ assert.deepEqual(blocked.pulseDisposableVerification,[{address:email,disposable:true,source:'local-reoon'}]);
+ const sent=await service.send(module,{...input,disposableOverride:[email]});assert.equal(sent.summary.sent,1);assert.deepEqual(calls[0].allowDisposable,[email]);
+ const other=await gate({module:'ammonia',recordId:'x',recipients:[people[0]],disposableOverride:['other@example.com']});assert.equal(other[0].allowed,false);
+});
+
+test('disposable consent cannot lift other statuses, stale results or provider/identity mismatches',async()=>{
+ const email=people[0].email;
+ const bad=[...['invalid','disabled','unknown','spamtrap','inbox_full','unavailable'].map(status=>({...good(email),status,deliverable:false})),
+  {...good(email),status:'disposable',checkedAt:'2020-01-01'},
+  {...good(email),status:'disposable',checkedAt:new Date(Date.now()+120000).toISOString()},
+  {...good(email),status:'disposable',mode:'quick'},
+  {...good(email),status:'disposable',provider:'Other'},
+  {...good('mismatch@example.com'),status:'disposable'},
+  ...['is_disabled','is_spamtrap','has_inbox_full'].map(flag=>({...good(email),status:'disposable',raw:{[flag]:true}}))];
+ for(const result of bad){
+  let calls=0;const gate=createReoonSendGate({verify:async()=>[result]},{register:async()=>{}});
+  const module={key:'ammonia',label:'Ammonia',assertChecks(){},history:{async begin(){return 'attempt';},async complete(id,result){return result;}}};
+  const service=new PulseSendService({verifyRecipients:gate,client:{enabled:true,async send(){calls++;return {status:'sent'};}}});
+  const response=await service.send(module,{recordId:'x',mode:'separate',subject:'Enquiry',body:'Hello',recipients:[people[0]],disposableOverride:[email]});
+  assert.equal(calls,0);assert.equal(response.verification[0].allowed,false);assert.equal(response.verification[0].disposable,false);assert.equal(response.summary.blocked,1);
+ }
+});

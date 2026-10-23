@@ -4,6 +4,8 @@ import test from 'node:test';
 import vm from 'node:vm';
 import {PulseSendController} from './pulse-send-panel.js';
 import {collectPublishedEmails} from '../../server/reoon.mjs';
+import {createReoonSendGate} from '../../server/pulse/reoon-send-gate.mjs';
+import {PulseSendService} from '../../server/pulse/send-service.mjs';
 
 // Runs the real platform-app.js with a fake Pulse API: nothing is sent.
 const source=await readFile(new URL('./platform-app.js',import.meta.url),'utf8');
@@ -66,6 +68,20 @@ test('HTTP request and permission errors remain visible in the panel',async()=>{
   ui.pulse.api.send=async()=>{throw Error(message);};await ui.pulse.sendDisposableAnyway();
   assert.equal(ui.status.textContent,message);assert.equal(ui.pulse.disposablePending,null);
  }
+});
+
+test('real local preflight disposable block shows consent before any Pulse call, then forwards confirmed address',async()=>{
+ const ui=disposableUI(),pulseCalls=[];
+ const gate=createReoonSendGate({verify:async([email])=>[{email,provider:'Reoon',mode:'power',status:'disposable',deliverable:null,checkedAt:new Date().toISOString()}]},{register:async()=>{}});
+ const module={key:'ammonia',label:'Ammonia',assertChecks(){},history:{async begin(){return 'attempt';},async complete(id,result){return result;}}};
+ const service=new PulseSendService({verifyRecipients:gate,client:{enabled:true,async send(payload){pulseCalls.push(payload);return {status:'sent',httpStatus:200};}}});
+ ui.pulse.api.send=async(key,input)=>service.send(module,input);
+ const blocked=await ui.pulse.send({name:'Example'});
+ assert.equal(pulseCalls.length,0);assert.equal(blocked.summary.blocked,2);assert.equal(ui.section.hidden,false);
+ assert.match(ui.list.innerHTML,/sales@example.com/);assert.match(ui.list.innerHTML,/other@example.com/);
+ ui.check(['sales@example.com']);const result=await ui.pulse.sendDisposableAnyway();
+ assert.equal(pulseCalls.length,1);assert.equal(result.summary.sent,1);assert.deepEqual(pulseCalls[0].allowDisposable,['sales@example.com']);
+ assert.equal(pulseCalls[0].to,'sales@example.com');assert.equal(pulseCalls[0].allowCatchAll,undefined);
 });
 
 test('every 8181 module gets a controller; unknown routes do not',()=>{
