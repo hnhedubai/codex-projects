@@ -1,0 +1,62 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,readFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import vm from 'node:vm';
+import {createReoonService,interpretPower,trustedLocalRequest,collectPublishedEmails} from './reoon.mjs';
+const address='person@example.com';
+const raw=(status='safe',extra={})=>({email:address,status,verification_mode:'power',is_safe_to_send:true,is_deliverable:true,is_role_account:false,...extra});
+test('Power results must match requested address and preserve positive mailbox results on catch-all domains',()=>{
+ assert.equal(interpretPower(raw(),address).deliverable,true);
+ for(const status of ['invalid','disabled','disposable','inbox_full','spamtrap','unknown'])assert.equal(interpretPower(raw(status),address).deliverable,false);
+ assert.equal(interpretPower(raw('role_account'),address).isRoleAccount,true);
+ assert.equal(interpretPower(raw('safe',{is_catch_all:true}),address).deliverable,true);
+ assert.equal(interpretPower(raw('role_account',{is_catch_all:true}),address).deliverable,true);
+ assert.equal(interpretPower(raw('catch_all'),address).deliverable,true);
+ assert.equal(interpretPower(raw('catch_all',{is_safe_to_send:false}),address).deliverable,false);
+ assert.throws(()=>interpretPower(raw('valid'),address));
+ assert.throws(()=>interpretPower(raw(), 'other@example.com'));
+ assert.throws(()=>interpretPower(raw('safe',{verification_mode:'quick'}),address));
+});
+test('paid calls are serialized, deduplicated, persisted and reused across restarts',async()=>{
+ const root=await mkdtemp(path.join(tmpdir(),'8181-reoon-test-'));let calls=0;
+ const options={root,apiKey:'test-secret',allowedEmails:new Set([address]),fetchImpl:async()=>{calls++;return {ok:true,json:async()=>raw()};}};
+ const service=await createReoonService(options);
+ const [first,second]=await Promise.all([service.verify([address,address]),service.verify([address])]);
+ assert.equal(calls,1);assert.equal(first.length,1);assert.equal(second[0].cached,true);
+ const restored=await createReoonService(options);await restored.verify([address]);assert.equal(calls,1);
+ assert.equal(restored.results()[address].status,'safe');assert.equal(restored.results()[address].raw,undefined);
+ const saved=await readFile(path.join(root,'platform-shell/data/reoon-results.json'),'utf8');
+ assert.ok(saved.includes('verification_mode'));assert.ok(!saved.includes('test-secret'));
+ assert.throws(()=>service.verify(['unsourced@example.com']),/published/);
+ assert.throws(()=>service.verify(Array(6).fill(address)),/five/);
+});
+test('missing keys and malformed provider responses never produce positive results',async()=>{
+ const root=await mkdtemp(path.join(tmpdir(),'8181-reoon-missing-'));
+ const missing=await createReoonService({root,apiKey:'',allowedEmails:new Set([address])});
+ assert.equal((await missing.status()).connected,false);await assert.rejects(missing.verify([address]),/unavailable/);
+ const mismatch=await createReoonService({root,apiKey:'key',allowedEmails:new Set([address]),fetchImpl:async()=>({ok:true,json:async()=>raw('safe',{email:'wrong@example.com'})})});
+ await assert.rejects(mismatch.verify([address]),/mismatched/);assert.deepEqual(mismatch.results(),{});
+});
+test('only same-origin local requests and sourced non-candidate addresses are accepted',()=>{
+ assert.ok(trustedLocalRequest({headers:{host:'localhost:8181',origin:'http://localhost:8181','sec-fetch-site':'same-origin'}}));
+ assert.equal(trustedLocalRequest({headers:{host:'localhost:8181',origin:'https://evil.example'}}),false);
+ assert.equal(trustedLocalRequest({headers:{host:'evil.example:8181'}}),false);
+ assert.equal(trustedLocalRequest({headers:{host:'localhost:8181','sec-fetch-site':'cross-site'}}),false);
+ const known=collectPublishedEmails([{contacts:[{emails:[{email:address,source:'https://example.com',type:'Published business email'},{email:'guess@example.com',source:'https://example.com',type:'Candidate only'}]}]}]);
+ assert.deepEqual([...known],[address]);
+});
+test('UI never derives verified ticks from negative prose or duplicate shared routes',async()=>{
+ const source=await readFile(new URL('../shared/js/platform-app.js',import.meta.url),'utf8');
+ const context=vm.createContext({document:{addEventListener(){}},window:{location:{origin:'http://localhost:8181'}},URL});
+ vm.runInContext(source.replace(/export class /g,'class ')+'\nglobalThis.Email=EmailVerification;globalThis.Sidebar=SidebarController;',context);
+ const sidebar=Object.create(context.Sidebar.prototype);
+ const contacts=[{email:address,status:'Not verified; no deliverable mailbox; unsafe'}];
+ assert.equal(sidebar.verification({contacts}).className,'pending');
+ context.Email.results[address]={...interpretPower(raw(),address),raw:undefined};
+ assert.equal(sidebar.verification({contacts:[...contacts,...contacts]}).mark,'✓');
+ assert.equal(sidebar.verification({contacts:[{email:address,corporateRoutes:[{email:address,type:'Generic company route'}]}]}).className,'pending');
+ context.Email.results[address]={...interpretPower(raw('role_account'),address),raw:undefined};
+ assert.equal(sidebar.verification({contacts}).className,'pending');
+});

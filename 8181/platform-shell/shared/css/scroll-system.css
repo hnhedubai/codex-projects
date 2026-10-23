@@ -1,0 +1,84 @@
+/* Shared viewport and scroll contract for every 8181 module.
+   The shell owns the viewport; each content surface owns only its internal scroll. */
+html,
+body,
+#app {
+  height: 100%;
+  min-height: 0;
+}
+
+body {
+  overflow: hidden;
+}
+
+.platform-shell {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.platform-shell > .sidebar,
+.platform-shell > main {
+  min-height: 0;
+}
+
+.platform-shell > .sidebar {
+  overflow: hidden;
+}
+
+.platform-shell > .sidebar .sidebar-library {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.platform-shell > .sidebar .leftbar-menu {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.platform-shell > main {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.platform-shell > main > .topbar {
+  flex: 0 0 auto;
+}
+
+.platform-shell > main > .platform-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+/* Portfolio tables and detail pages already have bounded inner scrollports.
+   Keep their parent content from creating a second page scroll. */
+.platform-shell > main > .platform-content:has(.pipeline-table-shell),
+.platform-shell > main > .platform-content:has(.table-wrap),
+.platform-shell > main > .platform-content:has(.record-detail-view) {
+  overflow: hidden;
+}
+
+@media print {
+  html,
+  body,
+  #app,
+  .platform-shell,
+  .platform-shell > main,
+  .platform-shell > main > .platform-content {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+}
