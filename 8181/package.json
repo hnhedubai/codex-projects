@@ -1,0 +1,6 @@
+{
+  "name": "opportunity-platform",
+  "private": true,
+  "type": "module",
+  "scripts": {"start": "node server.mjs", "checkpoint": "node scripts/checkpoint.mjs", "checkpoint:verify": "node scripts/checkpoint.mjs verify", "test:preservation": "node --test scripts/preservation.test.mjs"}
+}

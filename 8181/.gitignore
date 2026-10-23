@@ -1,0 +1,21 @@
+.env.local
+platform-shell/data/reoon-results.json
+platform-shell/data/reoon-results.json.tmp
+platform-shell/data/reoon-local-contacts.json
+platform-shell/data/reoon-local-contacts.json.tmp
+platform-shell/data/pulse-sends/
+exports/outreach-data.json
+exports/.outreach-*.tmp
+
+# Never track local credentials, backups, exports or operational data.
+.env
+.env.*
+backups/
+exports/
+*.log
+platform-shell/data/*
+node_modules/
+# Research records contain contacts; private project documents are not source code.
+modules/*/data/
+modules/listed-projects/documents/
+modules/nda-guard/*.docx
