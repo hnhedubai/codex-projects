@@ -54,20 +54,26 @@ export class SendRequest {
    if(catchAllOverride.some(email=>!isEmail(email)||!recipients.some(person=>person.email===email)))throw new SendError('Catch-all confirmation must contain only selected recipients.');
   }
   let offerProjects=[];
+  let disposableOverride=[];
+  if(input.disposableOverride!==undefined){
+   if(!Array.isArray(input.disposableOverride)||input.disposableOverride.length>100)throw new SendError('Disposable-mailbox confirmation is invalid.',400);
+   disposableOverride=[...new Set(input.disposableOverride.map(normalizeEmail))];
+   if(disposableOverride.some(email=>!isEmail(email)||!recipients.some(person=>person.email===email)))throw new SendError('Disposable-mailbox confirmation must contain only selected recipients.',400);
+  }
   if(input.offer!==undefined){
    if(module.key!=='investors-jv'||!Array.isArray(input.offer?.projectIds)||input.offer.projectIds.length>listedProjects.length)throw new SendError('Invalid project offer tracking.');
    const ids=[...new Set(input.offer.projectIds)];
    offerProjects=ids.map(id=>{const project=listedProjects.find(project=>project.id===id);if(!project)throw new SendError('Unknown offered project. Reload the project list.');return outreachProject(project);});
   }
-  return new SendRequest({module:module.key,recordId,recordName:text(input.recordName,300),mode,subject,body,recipients,offerProjects,catchAllOverride});
+  return new SendRequest({module:module.key,recordId,recordName:text(input.recordName,300),mode,subject,body,recipients,offerProjects,catchAllOverride,disposableOverride});
  }
  constructor(values){Object.assign(this,values);Object.freeze(this);}
- #key(parts){const ids=(this.offerProjects||[]).map(project=>project.id).sort();const overrides=(this.catchAllOverride||[]).slice().sort();return `oplatform:${this.module}:`+createHash('sha256').update([...parts,...(ids.length?['offer-projects',...ids]:[]),...(overrides.length?['catch-all',...overrides]:[])].join('|')).digest('hex');}
+ #key(parts){const ids=(this.offerProjects||[]).map(project=>project.id).sort();const overrides=(this.catchAllOverride||[]).slice().sort();return `oplatform:${this.module}:`+createHash('sha256').update([...parts,...(ids.length?['offer-projects',...ids]:[]),...(overrides.length?['catch-all',...overrides]:[]),...(this.disposableOverride?.length?['disposable',...this.disposableOverride.slice().sort()]:[])].join('|')).digest('hex');}
  /** One call per person (separate, personal greeting) or one call with To/CC/BCC (together). */
  calls(){
   if(this.mode==='separate')return this.recipients.map(item=>{
    const personal=this.module==='investors-jv'&&OUTREACH_DRAFT_V2&&isV2Body(this.body)?personaliseDraftV2(this.body,item):this.module==='investors-jv'&&OUTREACH_PROJECT_PICKER&&/^Hello[^\n]*,/m.test(this.body)?personalisePickerDraft(this.body,item.name,item.email):personalise(this.body,item.name);const {html,text:plain}=formatBody(personal);
-   return {emails:[item.email],payload:{to:item.email,subject:this.subject,body_html:html,body_text:plain,idempotency_key:this.#key([this.recordId,'separate',item.email,this.subject,personal]),...(this.catchAllOverride?.includes(item.email)?{allowCatchAll:[item.email]}:{})}};
+   return {emails:[item.email],payload:{to:item.email,subject:this.subject,body_html:html,body_text:plain,idempotency_key:this.#key([this.recordId,'separate',item.email,this.subject,personal]),...(this.disposableOverride?.includes(item.email)?{allowDisposable:[item.email]}:{}),...(this.catchAllOverride?.includes(item.email)?{allowCatchAll:[item.email]}:{})}};
   });
   const tos=this.recipients.filter(item=>item.field==='to').map(item=>item.email);
   const cc=[...tos.slice(1),...this.recipients.filter(item=>item.field==='cc').map(item=>item.email)];
@@ -75,6 +81,6 @@ export class SendRequest {
   const body=this.module==='investors-jv'&&OUTREACH_DRAFT_V2&&isV2Body(this.body)?personaliseDraftV2(this.body,this.recipients.length===1?this.recipients[0]:{shared:true}):this.body;
   const {html,text:plain}=formatBody(body);
   const signature=this.recipients.map(item=>`${item.field}:${item.email}`).sort();
-  return [{emails:this.recipients.map(item=>item.email),payload:{to:tos[0],...(cc.length?{cc:cc.join(', ')}:{}),...(bcc.length?{bcc:bcc.join(', ')}:{}),subject:this.subject,body_html:html,body_text:plain,idempotency_key:this.#key([this.recordId,'together',...signature,this.subject,body]),...(this.catchAllOverride?.length?{allowCatchAll:[...this.catchAllOverride]}:{})}}];
+  return [{emails:this.recipients.map(item=>item.email),payload:{to:tos[0],...(cc.length?{cc:cc.join(', ')}:{}),...(bcc.length?{bcc:bcc.join(', ')}:{}),subject:this.subject,body_html:html,body_text:plain,idempotency_key:this.#key([this.recordId,'together',...signature,this.subject,body]),...(this.disposableOverride?.length?{allowDisposable:[...this.disposableOverride]}:{}),...(this.catchAllOverride?.length?{allowCatchAll:[...this.catchAllOverride]}:{})}}];
  }
 }

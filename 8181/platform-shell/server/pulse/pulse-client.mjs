@@ -40,7 +40,10 @@ export class PulseClient {
    return {status:'sent',httpStatus:response.status,error:'',emailMessageId:body?.emailMessageId||null,replay:body?.idempotentReplay===true};
   }
   if(response.status===422&&body?.code==='recipients_blocked')return {status:'blocked',httpStatus:422,error:detail||'Pulse blocked a recipient.',verification:body?.verification||null};
-  if(response.status===401||response.status===403)return {status:'failed',httpStatus:response.status,error:'Pulse rejected the send key. Create a new pulse_send key in GrynH2 Gear.'};
+  if(response.status===403)return {status:'failed',httpStatus:403,error:'Your Pulse key\'s user lacks the send-override permission (emails.send_override), or is not permitted to send this request.'};
+  if(response.status===400)return {status:'failed',httpStatus:400,error:`Pulse rejected the request (400). Check that confirmed addresses are recipients of this email. ${detail}`.trim()};
+  if(response.status===409)return {status:'failed',httpStatus:409,error:`Pulse found an idempotency conflict (409). Start a new send attempt; the content or consent list differs from the earlier request. ${detail}`.trim()};
+  if(response.status===401)return {status:'failed',httpStatus:401,error:'Pulse rejected the send key. Create a new pulse_send key in GrynH2 Gear.'};
   return {status:'failed',httpStatus:response.status,error:detail||`Pulse error (HTTP ${response.status}).`};
  }
 }

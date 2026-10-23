@@ -23,6 +23,51 @@ function setup(path,{own={available:true,generatedAt:'2026-10-22T08:00:00.000Z',
 }
 const sent=(subject)=>({lastSentAt:'2026-10-20T10:00:00.000Z',sentCount:1,blockedCount:0,failedCount:0,pendingCount:0,history:[{at:'2026-10-20T10:00:00.000Z',status:'done',mode:'separate',subject,recipients:[{email:'mubashir@hnh.ae',field:'to'}],results:[{emails:['mubashir@hnh.ae'],status:'sent',error:''}]}]});
 
+function disposableUI({disposable=true,mode='separate'}={}){
+ const {app,pulse}=setup('/ammonia');
+ const draft={value:'Subject: Company discussion\n\nHello,\n\nMay we discuss renewable energy partnerships?\n\nKind regards,'};
+ const button={disabled:true},retry={disabled:true},section={hidden:true},status={textContent:''},list={innerHTML:''};
+ const inputs=[{dataset:{pulseRecipient:'sales@example.com',name:'Team',origin:'published'}},{dataset:{pulseRecipient:'other@example.com',name:'Other',origin:'published'}}];
+ let checked=[];
+ const card={querySelector(selector){if(selector.includes('pulse-send"]'))return button;if(selector==='[data-pulse-disposable-send]')return retry;if(selector==='[data-pulse-disposable-confirmation]')return section;if(selector==='[data-pulse-disposable-list]')return list;if(selector==='[data-pulse-disposable]:checked')return checked[0]||null;if(selector==='.pulse-send-status')return status;if(selector.startsWith('[data-pulse-field='))return {value:selector.includes('other@')?'cc':'to'};return null;},querySelectorAll(selector){if(selector==='[data-pulse-recipient]:checked')return inputs;if(selector==='[data-pulse-disposable]:checked')return checked;return [];}};
+ app.root={querySelector(selector){if(selector==='#outreach-draft')return draft;if(selector==='[data-pulse-card]')return card;if(selector==='[data-pulse-mode]:checked')return {value:mode};return null;},querySelectorAll(){return [];}};
+ app.outreachSafety=()=>({safe:true});app.windWorkflow=()=>({pulseChecks:{}});app.projectOfferContext=undefined;
+ pulse.status={enabled:true};pulse.refresh=async()=>{};pulse.refreshVerification=()=>{};
+ const calls=[];pulse.api.send=async(key,input)=>{calls.push(structuredClone(input));return calls.length===1?{summary:{sent:0,blocked:2,failed:0},verification:[],results:[{emails:['sales@example.com','other@example.com'],status:'blocked',error:'Pulse blocked recipient'}],pulseVerification:{invalid:[{address:'sales@example.com',disposable},{address:'other@example.com',reason:'No MX'}]}}:{summary:{sent:input.recipients.length,blocked:0,failed:0},verification:[],results:[]};};
+ return {app,pulse,calls,section,list,draft,status,check:(emails)=>{checked=emails.map(value=>({value}));}};
+}
+
+test('disposable Pulse block shows unchecked per-address consent; no confirmation never retries',async()=>{
+ const ui=disposableUI();await ui.pulse.send({name:'Example'});
+ assert.equal(ui.section.hidden,false);assert.match(ui.list.innerHTML,/sales@example.com/);assert.doesNotMatch(ui.list.innerHTML,/other@example.com|<input[^>]*\schecked(?:\s|=|>)/);
+ assert.match(ui.list.innerHTML,/real company address/);
+ assert.equal(ui.calls[0].disposableOverride,undefined);
+ await ui.pulse.sendDisposableAnyway();assert.equal(ui.calls.length,1);
+ ui.check(['sales@example.com','not-shown@example.com']);await ui.pulse.sendDisposableAnyway();
+ assert.deepEqual(ui.calls[1].disposableOverride,['sales@example.com']);assert.deepEqual(ui.calls[1].recipients.map(r=>r.email),['sales@example.com']);
+ assert.equal(ui.calls[1].body,ui.calls[0].body);assert.equal(ui.calls[1].subject,ui.calls[0].subject);
+ await ui.pulse.sendDisposableAnyway();assert.equal(ui.calls.length,2,'consent is consumed');
+});
+
+test('non-disposable blocks do not offer consent and changed drafts invalidate consent',async()=>{
+ const blocked=disposableUI({disposable:false});await blocked.pulse.send({name:'Example'});assert.equal(blocked.section.hidden,true);assert.equal(blocked.pulse.disposablePending,null);
+ const changed=disposableUI();await changed.pulse.send({name:'Example'});changed.check(['sales@example.com']);changed.draft.value+='Changed email';await changed.pulse.sendDisposableAnyway();assert.equal(changed.calls.length,1);assert.equal(changed.section.hidden,true);
+});
+
+test('together disposable retry preserves original To/CC/BCC recipients and body',async()=>{
+ const previous=globalThis.CSS;globalThis.CSS={escape:value=>value};
+ try{const ui=disposableUI({mode:'together'});await ui.pulse.send({name:'Example'});ui.check(['sales@example.com']);await ui.pulse.sendDisposableAnyway();assert.deepEqual(ui.calls[1].recipients,ui.calls[0].recipients);assert.equal(ui.calls[1].body,ui.calls[0].body);assert.deepEqual(ui.calls[1].disposableOverride,['sales@example.com']);}
+ finally{if(previous===undefined)delete globalThis.CSS;else globalThis.CSS=previous;}
+});
+
+test('HTTP request and permission errors remain visible in the panel',async()=>{
+ for(const message of ['Pulse rejected the request (400). Check confirmed addresses.','Your Pulse key\'s user lacks the send-override permission (emails.send_override).']){
+  const ui=disposableUI();await ui.pulse.send({name:'Example'});ui.check(['sales@example.com']);
+  ui.pulse.api.send=async()=>{throw Error(message);};await ui.pulse.sendDisposableAnyway();
+  assert.equal(ui.status.textContent,message);assert.equal(ui.pulse.disposablePending,null);
+ }
+});
+
 test('every 8181 module gets a controller; unknown routes do not',()=>{
  for(const path of ['/listed-projects','/wind-projects','/investors-jv','/hydrogen-offtakers','/e-saf','/ammonia','/gases','/diesel-en590'])assert.ok(PulseSendController.forPath(path,{}),path);
  assert.equal(PulseSendController.forPath('/nda-guard',{}),null);

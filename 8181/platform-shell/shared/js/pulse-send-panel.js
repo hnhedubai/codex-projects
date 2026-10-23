@@ -34,7 +34,11 @@ export class PulseSendController {
  attach(app){
   this.app=app;
   this.listeners?.abort();this.listeners=new AbortController();
+  app.root.addEventListener('input',event=>{if(event.target.matches('#outreach-draft'))this.#clearDisposable();},{signal:this.listeners.signal});
+  app.root.addEventListener('click',event=>{if(event.target.closest('[data-pulse-disposable-send]')){event.preventDefault();this.sendDisposableAnyway();}},{signal:this.listeners.signal});
   app.root.addEventListener('change',event=>{
+   if(event.target.matches('[data-pulse-disposable]'))this.#syncDisposableButton();
+   if(event.target.matches('[data-pulse-recipient],[data-pulse-field],[data-pulse-mode]'))this.#clearDisposable();
    if(event.target.matches('[data-pulse-mode]'))this.#syncMode();
    if(event.target.matches('[data-pulse-check]')&&app.detailRecordId){
     const checks={...(app.windWorkflow(app.detailRecordId).pulseChecks||{}),[event.target.dataset.pulseCheck]:event.target.checked};
@@ -47,7 +51,7 @@ export class PulseSendController {
   app.root.addEventListener('click',event=>{const button=event.target.closest('[data-pulse-reoon]');if(!button)return;const detail=button.nextElementSibling;if(detail){detail.textContent=this.verificationDetails(button.dataset.pulseReoon);detail.hidden=!detail.hidden;button.setAttribute('aria-expanded',String(!detail.hidden));}},{signal:this.listeners.signal});
   return this;
  }
- detach(){this.listeners?.abort();}
+ detach(){this.listeners?.abort();this.disposablePending=null;}
  get checks(){return this.module.requiredChecks||[];}
  checksDone(recordId){const saved=this.app.windWorkflow(recordId).pulseChecks||{};return this.checks.every(check=>saved[check.id]===true);}
 
@@ -135,7 +139,7 @@ const recipientRows=rows.length?rows.map(row=>`<tr><td><input type="checkbox" da
    const row=rows.find(row=>esc(row.email)===address);return row?`${open}${address}<br><button type="button" class="quiet" data-pulse-reoon="${esc(row.email)}" data-pulse-corporate-candidate="${row.corporateCandidate}" aria-expanded="false" title="View the saved Reoon verification result">${esc(this.verificationLabel(row.email))}</button><p hidden role="status">${esc(this.verificationDetails(row.email))}</p>${tail}`:match;
   });
   const heading=this.module.deskHistory?'Send history (8181 and Wind Projects desk)':'Send history';
-  return `<section class="card wind-outreach-card wind-pulse-card" data-pulse-card><h2>Send with Pulse</h2><p class="muted">${help}</p><div class="outreach-mode"><label><input type="radio" name="pulse-mode" value="separate" data-pulse-mode checked> One by one (personal greeting)</label><label><input type="radio" name="pulse-mode" value="together" data-pulse-mode> One email (To / CC / BCC)</label></div><table class="outreach-recipients"><tbody>${verifiedRows}</tbody></table><p><button type="button" class="primary" data-detail-action="pulse-send" disabled>Send with Pulse</button></p><section class="pulse-catchall-confirmation" data-pulse-catchall-confirmation hidden><h3>Confirm catch-all addresses</h3><p>These domains accept all mail, so Pulse cannot confirm the mailbox exists. The message may bounce or go unread. I want to send to these addresses anyway.</p><div data-pulse-catchall-list></div><p><button type="button" class="primary" data-detail-action="pulse-send-anyway" disabled>Send anyway</button></p></section><p class="pulse-send-status" role="status" aria-live="polite"></p><h3>${heading}</h3><div class="outreach-send-history">${this.app.renderSendHistorySync()}${this.app.renderImportedOutreachHistory()}</div></section>`;
+  return `<section class="card wind-outreach-card wind-pulse-card" data-pulse-card><h2>Send with Pulse</h2><p class="muted">${help}</p><div class="outreach-mode"><label><input type="radio" name="pulse-mode" value="separate" data-pulse-mode checked> One by one (personal greeting)</label><label><input type="radio" name="pulse-mode" value="together" data-pulse-mode> One email (To / CC / BCC)</label></div><table class="outreach-recipients"><tbody>${verifiedRows}</tbody></table><p><button type="button" class="primary" data-detail-action="pulse-send" disabled>Send with Pulse</button></p><section class="pulse-catchall-confirmation" data-pulse-catchall-confirmation hidden><h3>Confirm catch-all addresses</h3><p>These domains accept all mail, so Pulse cannot confirm the mailbox exists. The message may bounce or go unread. I want to send to these addresses anyway.</p><div data-pulse-catchall-list></div><p><button type="button" class="primary" data-detail-action="pulse-send-anyway" disabled>Send anyway</button></p></section><section data-pulse-disposable-confirmation hidden><h3>Confirm company mailboxes flagged as disposable</h3><div data-pulse-disposable-list></div><p><button type="button" class="primary" data-pulse-disposable-send disabled>Send confirmed addresses anyway</button></p></section><p class="pulse-send-status" role="status" aria-live="polite"></p><h3>${heading}</h3><div class="outreach-send-history">${this.app.renderSendHistorySync()}${this.app.renderImportedOutreachHistory()}</div></section>`;
  }
  /** Outreach tab for modules without the shared Wind draft layout (EN590). */
  renderOutreachTab(record,{title,draft}){
@@ -173,8 +177,45 @@ const recipientRows=rows.length?rows.map(row=>`<tr><td><input type="checkbox" da
   return verification.filter(item=>item?.catchAll===true&&blocked.has(String(item.address||item.email||'').toLowerCase())&&!item.invalid).map(item=>({email:String(item.address||item.email).toLowerCase()}));
  }
  #say(text){const status=this.#card()?.querySelector('.pulse-send-status');if(status)status.textContent=text;}
+ #clearDisposable(){this.disposablePending=null;const section=this.#card()?.querySelector('[data-pulse-disposable-confirmation]');if(section)section.hidden=true;}
+ #syncDisposableButton(){const card=this.#card(),button=card?.querySelector('[data-pulse-disposable-send]');if(button)button.disabled=this.sending||!card.querySelector('[data-pulse-disposable]:checked');}
+ #disposableCandidates(result){
+  const blocked=new Set((result.results||[]).filter(item=>item.status==='blocked').flatMap(item=>item.emails||[]).map(email=>String(email).toLowerCase()));
+  const invalid=result.pulseDisposableVerification||result.pulseVerification?.invalid||[];
+  return [...new Set(invalid.filter(item=>item?.disposable===true).map(item=>String(item.address||item.email||'').toLowerCase()).filter(email=>blocked.has(email)))];
+ }
+ #showDisposable(input,result){
+  if(this.app.detailRecordId!==input.recordId||(this.app.pulse&&this.app.pulse!==this))return false;
+  const current=parseDraft(this.app.root.querySelector('#outreach-draft')?.value||'');
+  if(current.subject!==input.subject||current.body!==input.body)return false;
+  const candidates=this.#disposableCandidates(result);if(!candidates.length)return false;
+  const card=this.#card(),section=card?.querySelector('[data-pulse-disposable-confirmation]'),list=card?.querySelector('[data-pulse-disposable-list]');if(!section||!list)return false;
+  this.disposablePending={input:structuredClone(input),candidates,recordId:this.app.detailRecordId,draft:this.app.root.querySelector('#outreach-draft')?.value||''};
+  list.innerHTML=candidates.map(email=>`<label style="display:flex;align-items:flex-start;gap:8px;margin:10px 0"><input type="checkbox" data-pulse-disposable value="${esc(email)}" style="width:auto;flex:none"> <span><strong>${esc(email)}</strong><br>Pulse’s checker says this looks like a temporary mailbox. I’ve checked it is a real company address — send anyway.</span></label>`).join('');
+  section.hidden=false;this.#syncDisposableButton();return true;
+ }
+ async sendDisposableAnyway(){
+  if(this.sending||!this.disposablePending)return null;
+  const pending=this.disposablePending;
+  if(this.app.detailRecordId!==pending.recordId||(this.app.root.querySelector('#outreach-draft')?.value||'')!==pending.draft){this.#clearDisposable();this.#say('The email changed. Start a new send and confirm its addresses again.');return null;}
+  if(!this.checksDone(pending.recordId)||this.app.outreachSafety?.().safe===false){this.#say('Complete the checklist and resolve the email safety checks first.');return null;}
+  const checked=[...this.#card()?.querySelectorAll('[data-pulse-disposable]:checked')||[]].map(node=>String(node.value).toLowerCase());
+  const confirmed=[...new Set(checked.filter(email=>pending.candidates.includes(email)))];
+  if(!confirmed.length){this.#say('Tick each company address you explicitly want to send to.');return null;}
+  // Together mode preserves the original To/CC/BCC envelope and content. Separate
+  // mode retries only individually confirmed blocked addresses, never other sends.
+  const recipients=pending.input.mode==='together'?pending.input.recipients:pending.input.recipients.filter(item=>confirmed.includes(item.email.toLowerCase()));
+  this.#clearDisposable();this.sending=true;this.#syncButton();this.#syncDisposableButton();
+  try{
+   const result=await this.api.send(this.module.key,{...pending.input,recipients,checks:this.app.windWorkflow(pending.recordId).pulseChecks||{},disposableOverride:confirmed});
+   this.#say(`Sent ${result.summary.sent} · Blocked ${result.summary.blocked} · Failed ${result.summary.failed}.${(result.results||[]).filter(item=>item.error).map(item=>` ${item.error}`).join('')}`);
+   return result;
+  }catch(error){this.#say(error.message);return null;}
+  finally{this.sending=false;await this.refresh();this.#syncDisposableButton();}
+ }
  async send(record){
   if(this.sending)return null;
+  this.#clearDisposable();
   const safety=this.app.outreachSafety?.();if(safety?.safe===false){this.#say(safety.message);return null;}
   const recordId=this.app.detailRecordId;
   const {subject,body}=parseDraft(this.app.root.querySelector('#outreach-draft')?.value||'');
@@ -191,7 +232,9 @@ const recipientRows=rows.length?rows.map(row=>`<tr><td><input type="checkbox" da
    for(const item of result.verification||[])this.verification[item.email]=item;this.refreshVerification();
    const {sent,blocked,failed}=result.summary;
    const candidates=this.#catchAllCandidates(result);
+   const disposable=this.#showDisposable(input,result);
    if(candidates.length){const sentEmails=new Set((result.results||[]).filter(item=>item.status==='sent').flatMap(item=>item.emails||[]).map(email=>String(email).toLowerCase()));this.catchAllPending={input,sentEmails,candidates};this.#showCatchAllConfirmation(candidates);this.#say('Pulse blocked catch-all addresses. Review the confirmation below to retry only selected addresses.');}
+   else if(disposable)this.#say('Pulse blocked a mailbox as disposable. Review and tick each address below before retrying.');
    else if((!this.app.pulse||this.app.pulse===this)&&this.app.detailRecordId===recordId)this.#say(`Sent ${sent} · Blocked ${blocked} · Failed ${failed}.${result.results.filter(item=>item.error).map(item=>` ${item.emails.join(', ')}: ${item.error}`).join('')}`);
    return result;
    }catch(error){if((!this.app.pulse||this.app.pulse===this)&&this.app.detailRecordId===recordId)this.#say(error.message);return null;}

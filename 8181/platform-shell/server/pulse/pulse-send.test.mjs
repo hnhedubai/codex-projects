@@ -79,6 +79,42 @@ test('EN590 sends require every checklist item',()=>{
  assert.ok(SendRequest.parse({...draft,recipients:people,checks:{entity:true,product:true,authority:true,compliance:true}},en590));
 });
 
+test('disposable consent is absent by default, recipient-scoped, and changes only override/key',()=>{
+ for(const mode of ['separate','together']){
+  const input={...draft,mode,recipients:[{email:'sales@example.com',name:'Team',field:'to'},{email:'other@example.com',name:'Other',field:'cc'}]};
+  const base=SendRequest.parse(input,wind).calls();
+  const confirmed=SendRequest.parse({...input,disposableOverride:['SALES@example.com']},wind).calls();
+  assert.equal(base[0].payload.allowDisposable,undefined);
+  assert.deepEqual(confirmed[0].payload.allowDisposable,['sales@example.com']);
+  assert.notEqual(base[0].payload.idempotency_key,confirmed[0].payload.idempotency_key);
+  const {allowDisposable,idempotency_key,...content}=confirmed[0].payload;
+  const {idempotency_key:oldKey,...original}=base[0].payload;assert.deepEqual(content,original);
+  if(mode==='separate')assert.equal(confirmed[1].payload.allowDisposable,undefined);
+ }
+ assert.throws(()=>SendRequest.parse({...draft,recipients:[{email:'sales@example.com'}],disposableOverride:['outsider@example.com']},wind),/only selected recipients/);
+ assert.throws(()=>SendRequest.parse({...draft,recipients:[{email:'sales@example.com'}],disposableOverride:true},wind),/confirmation is invalid/);
+});
+
+test('service returns all disposable blocks from separate sends and records explicit consent',async()=>{
+ const module=await new SendModule({route:'/wind-projects',key:'wind-projects',label:'Wind'}).openHistory(tempDir());
+ const client=fakePulse([{status:'blocked',httpStatus:422,error:'Mailbox unconfirmed',verification:{invalid:[{address:'first@example.com'}]}},{status:'blocked',httpStatus:422,error:'Disposable (temporary) mailbox',verification:{invalid:[{address:'second@example.com',disposable:true}]}}]);
+ const service=new PulseSendService({client});
+ const input={...draft,recipients:[{email:'first@example.com'},{email:'second@example.com'}]};
+ const blocked=await service.send(module,input);
+ assert.deepEqual(blocked.pulseDisposableVerification,[{address:'second@example.com',disposable:true}]);
+ assert.ok(client.calls.every(call=>!call.allowDisposable));
+ await service.send(module,{...input,recipients:[{email:'second@example.com'}],disposableOverride:['second@example.com']});
+ assert.deepEqual(client.calls[2].allowDisposable,['second@example.com']);
+ assert.deepEqual(module.history.entries().at(-1).disposableOverride,['second@example.com']);
+});
+
+test('Pulse HTTP errors explain request, permission, conflict and remaining blocks',async()=>{
+ for(const [status,pattern] of [[400,/confirmed addresses/],[403,/lacks the send-override permission/],[409,/idempotency conflict/],[422,/Still blocked/]]){
+  const client=new PulseClient({key:'fake-unit-test-key',fetchImpl:async()=>({ok:false,status,json:async()=>({code:'recipients_blocked',error:'Still blocked',verification:{invalid:[]}})})});
+  const result=await client.send({});assert.equal(result.httpStatus,status);assert.match(result.error,pattern);
+ }
+});
+
 test('history records "sending" before Pulse, then results; snapshot hides internals; .bak is kept',async()=>{
  const file=path.join(tempDir(),'wind-projects.json');
  const store=await SendHistoryStore.open(file);

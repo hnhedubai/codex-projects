@@ -35,6 +35,7 @@ export class SendHistoryStore {
   const entry={id:randomUUID(),at:this.#now(),status:'sending',module:request.module,recordId:request.recordId,recordName:request.recordName,mode:request.mode,subject:request.subject,body:request.body,
    recipients:request.recipients.map(({email,name,field,origin})=>({email,name,field,origin})),
    offerProjects:structuredClone(request.offerProjects||[]),verification:structuredClone(request.verification||[]),...(request.catchAllOverride?.length?{catchAllOverride:[...request.catchAllOverride]}:{}),
+   ...(request.disposableOverride?.length?{disposableOverride:[...request.disposableOverride]}:{}),
    messages:request.calls().map(({emails,payload})=>({emails,subject:payload.subject,body:payload.body_text})),
    results:[],summary:{sent:0,blocked:0,failed:0}};
   return this.#edit(next=>{next.sends.push(entry);return entry.id;});
