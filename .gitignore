@@ -18,3 +18,17 @@ data/*.bak
 
 # Generated enrichment runs (contain contact data / email lists - never commit)
 8181/outputs/
+
+# Marketing media (~100 MB PNG/MP4), referenced by no source file; kept outside git
+brand-assets/
+
+# One-off task scratch left at the repo root (anchored: scripts/ copies are real source)
+/EN590-contacts*.xlsx
+/Tile Product & Inventory Catalogue*.xlsx
+/add_sizes_mm.py
+/build_cv.py
+/convert_catalogue_to_normal_sheet.py
+/make_plain_catalogue.py
+/build_google_sheet_workbook.mjs
+/omantel-firecrawl-markdown.md
+/synergises-logo-animation.html
