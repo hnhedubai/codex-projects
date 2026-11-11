@@ -14,7 +14,7 @@
 .column-resizer:focus-visible{outline:2px solid #135f50;outline-offset:-2px}
 .column-resizing,.column-resizing *{cursor:col-resize!important;user-select:none!important}
 .column-width-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.section-head{flex-wrap:wrap;gap:12px}
+.section-head{flex-wrap:wrap;gap:12px}.pipeline-priority-filter{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:11px;white-space:nowrap}.pipeline-priority-filter select{padding:8px 10px;font-size:11px;min-width:135px}
 main{min-width:0}
 .table-wrap{width:100%;max-width:100%;overflow-x:scroll;overscroll-behavior-x:contain;scrollbar-width:auto;scrollbar-color:#779a89 #edf2ef}
 .table-wrap::-webkit-scrollbar{height:14px}
@@ -94,3 +94,6 @@ body.portfolio-view .country-options label{display:flex;flex-direction:row;justi
 body.portfolio-view .country-options label span{display:block;flex:1;text-align:left;white-space:nowrap}
 body.portfolio-view .country-options input{flex:0 0 auto;width:auto}
 
+
+/* H2 Dev email subject choices follow the existing outreach card styling. */
+.outreach-subject-editor{margin:18px 0 22px}.outreach-subject-editor>label,.outreach-subject-library>label{display:block;font-size:12px;font-weight:600;margin-bottom:7px}.outreach-subject-editor input,.outreach-subject-editor select{display:block;width:100%;min-width:0;margin-top:7px}.outreach-subject-library{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:end;margin-top:16px}.outreach-subject-library>label{margin:0}.outreach-subject-actions{display:flex;flex-wrap:wrap;gap:8px}.outreach-subject-actions button{white-space:nowrap}.outreach-subject-help{font-size:12px!important;line-height:1.5!important;margin:10px 0 0!important}[data-outreach-subject-status]:empty{display:none}.outreach-subject-editor [role="status"]{font-size:12px;margin:8px 0 0}#outreach-message{display:block;width:100%;margin-top:8px;resize:vertical}#outreach-draft[hidden]{display:none!important}@media(max-width:1100px){.outreach-subject-library{grid-template-columns:1fr}.outreach-subject-actions{justify-content:flex-start}}

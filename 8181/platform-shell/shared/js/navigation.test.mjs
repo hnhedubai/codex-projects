@@ -76,6 +76,7 @@ test('module loader shares successful in-flight requests and retries failures wi
 });
 test('module templates match the intended commercial purpose and never rewrite a saved draft',()=>{
  assert.match(defaultOutreachDraft('/hydrogen-offtakers',{}),/hydrogen offtake/i);assert.doesNotMatch(defaultOutreachDraft('/hydrogen-offtakers',{}),/wind-energy developer|equity investment/i);
+ const tyczka=defaultOutreachDraft('/h2-dev',{company:'Tyczka Hydrogen GmbH'});assert.match(tyczka,/Subject: Tyczka Hydrogen — 8 MW Polish green hydrogen opportunity/);assert.match(tyczka,/Hünfeld acquisition/);assert.match(tyczka,/non-binding offtake agreements in place/);
  for(const path of ['/e-saf','/gases','/ammonia','/investors-jv'])assert.ok(defaultOutreachDraft(path,{}));assert.equal(defaultOutreachDraft('/wind-projects',{}),null);
  const app=Object.create(OpportunityPlatformApp.prototype);Object.assign(app,{path:'/hydrogen-offtakers',detailRecordId:'alpha',windWorkflow:()=>({outreachDraft:'User-written enquiry'}),renderSendHistorySync:()=>'',renderImportedOutreachHistory:()=>''});
  assert.match(app.renderOutreachPanel({name:'Alpha'}),/User-written enquiry/);
@@ -102,4 +103,88 @@ test('Table/Kanban from detail uses portfolio transition and keeps the selected 
  const {nav,browser,writes}=harness();await nav.go({path:'/wind-projects',id:'alpha',tab:'outreach'});
  nav.app.sidebar={setViewMode:mode=>nav.app.pipeline.mode=mode};nav.app.pipeline.mode='table';nav.root={querySelector:()=>({value:''})};
  await nav.portfolio({mode:'kanban'});assert.equal(nav.app.pipeline.mode,'kanban');assert.equal(nav.app.detailRecordId,null);assert.equal(browser.location.hash,'#portfolio');assert.equal(writes.at(-1)[1],'/wind-projects#portfolio');
+});
+
+test('subject options add, edit and deduplicate without changing other saved subjects',async()=>{
+ const {saveSubjectOption,outreachSubjectOptions}=await import('./navigation.js');
+ const original=['Original subject','Second subject'];
+ assert.deepEqual(saveSubjectOption(original,'Original subject','Third subject').subjects,['Original subject','Second subject','Third subject']);
+ assert.deepEqual(saveSubjectOption(original,'Original subject','Edited original',true).subjects,['Edited original','Second subject']);
+ assert.deepEqual(saveSubjectOption(original,'Original subject','Second subject').subjects,original);
+ assert.deepEqual(outreachSubjectOptions(original,'Current pending subject'),[...original,'Current pending subject']);
+ for(const bad of ['', 'x'.repeat(301),'first\nsecond'])assert.throws(()=>saveSubjectOption(original,'Original subject',bad));
+ assert.throws(()=>saveSubjectOption(original,'Missing','New',true),/Choose a saved/);
+ assert.deepEqual(original,['Original subject','Second subject']);
+});
+
+function subjectHarness(){
+ const values=storage(),state={alpha:{outreachDraft:'Subject: Original subject\n\nDear [Name],\n\nKeep all my project facts.\n\nKind regards,',outreachNotes:'Keep conversation',contactsAdded:[{name:'Keep contact'}]}};
+ const canonical={id:'outreach-draft',tagName:'TEXTAREA',type:'textarea',value:state.alpha.outreachDraft,closest:()=>true};
+ const subject={id:'outreach-subject',value:'Original subject'},message={id:'outreach-message',value:'Dear [Name],\n\nKeep all my project facts.\n\nKind regards,'};
+ const select={id:'outreach-subject-options',value:'Original subject',options:[{value:''},{value:'Original subject'}]},button={disabled:false},status={textContent:''};
+ const fields={'#outreach-draft':canonical,'#outreach-subject':subject,'#outreach-message':message,'#outreach-subject-options':select,'[data-detail-action="update-subject"]':button,'[data-outreach-subject-status]':status};
+ const content={querySelector:()=>null,querySelectorAll:selector=>selector==='input[id],textarea[id],select[id]'?[canonical,subject,message,select]:[]};
+ const root={querySelector:selector=>selector==='#content'?content:fields[selector]||null};
+ const app=Object.create(OpportunityPlatformApp.prototype);let changes=0;
+ Object.assign(app,{path:'/h2-dev',detailRecordId:'alpha',root,windWorkflow:id=>state[id]||{},saveWindWorkflow:(id,patch)=>state[id]={...state[id],...patch},pulse:{draftChanged(){changes++;}}});
+ const navigation=new PlatformNavigation({root,workspaces:{'/h2-dev':{}},loadModule:async()=>[],window:{scrollTo(){}},storage:values});
+ navigation.current={path:'/h2-dev',id:'alpha',tab:'outreach'};navigation.app=app;app.navigation=navigation;
+ return {app,navigation,state,canonical,subject,message,select,button,status,values,changes:()=>changes};
+}
+
+test('editing and selecting a subject keeps the message body and saves a recoverable canonical pending draft',()=>{
+ const ui=subjectHarness(),body=ui.message.value;
+ ui.subject.value='New investment subject';ui.navigation.captureField(ui.subject);
+ let entry=ui.navigation.drafts.read(ui.navigation.current);
+ assert.equal(entry.fields['outreach-draft'].value,`Subject: New investment subject\n\n${body}`);
+ assert.equal(entry.fields['outreach-subject'],undefined);
+ ui.select.value='Original subject';ui.navigation.captureField(ui.select);
+ assert.equal(ui.subject.value,'Original subject');assert.equal(ui.message.value,body);
+ assert.equal(ui.canonical.value,`Subject: Original subject\n\n${body}`);assert.ok(ui.changes()>=2);
+ const restored=new NavigationDrafts(ui.values);assert.equal(restored.read(ui.navigation.current).fields['outreach-draft'].value,ui.canonical.value);
+ assert.equal(restored.read({...ui.navigation.current,id:'beta'}).fields,undefined);
+ assert.equal(restored.read({...ui.navigation.current,path:'/wind-projects'}).fields,undefined);
+});
+
+test('separate subject and message fields restore from old full-draft pending edits',()=>{
+ const ui=subjectHarness();
+ const pending='Subject: Old pending subject\n\nDear [Name],\n\nUnsaved message and commercial details.';
+ ui.navigation.drafts.field(ui.navigation.current,'outreach-draft',{value:pending});
+ ui.navigation.restore();
+ assert.equal(ui.subject.value,'Old pending subject');assert.equal(ui.message.value,'Dear [Name],\n\nUnsaved message and commercial details.');assert.equal(ui.canonical.value,pending);assert.equal(ui.select.value,'');assert.equal(ui.button.disabled,true);
+});
+
+test('saving subject options preserves draft, contacts and notes and exposes storage failure',()=>{
+ const ui=subjectHarness(),original=structuredClone(ui.state.alpha);
+ ui.subject.value='Strategic partnership | 8 MW | Poland';ui.app.saveOutreachSubject(false);
+ assert.deepEqual(ui.state.alpha.outreachSubjects,['Original subject','Strategic partnership | 8 MW | Poland']);
+ for(const key of ['outreachDraft','outreachNotes','contactsAdded'])assert.deepEqual(ui.state.alpha[key],original[key]);
+ assert.match(ui.status.textContent,/Subject saved/);
+ assert.equal(ui.navigation.drafts.read(ui.navigation.current).fields['outreach-draft'].value,ui.canonical.value);
+ ui.subject.value='Cannot persist';ui.app.saveWindWorkflow=()=>{throw Error('Storage full');};ui.app.saveOutreachSubject(false);
+ assert.match(ui.status.textContent,/not saved: Storage full/);assert.equal(ui.subject.value,'Cannot persist');
+});
+
+test('H2 subject editor displays saved drafts safely and other modules keep their existing editor',()=>{
+ const ui=subjectHarness();
+ const draft='Subject: A <script> & "quoted" subject\n\nKeep <facts> and all body paragraphs.';
+ const markup='<label class="sr-only" for="outreach-draft">Email draft</label><textarea id="outreach-draft" rows="16">old</textarea>';
+ const result=ui.app.renderOutreachSubjectEditor(markup,draft);
+ assert.match(result,/id="outreach-subject"/);assert.match(result,/id="outreach-message"/);assert.match(result,/id="outreach-draft" hidden/);
+ assert.doesNotMatch(result,/<script>/);assert.match(result,/A &lt;script&gt; &amp; &quot;quoted&quot; subject/);
+ assert.match(result,/Keep &lt;facts&gt; and all body paragraphs/);
+ ui.app.path='/wind-projects';assert.equal(ui.app.renderOutreachSubjectEditor(markup,draft),markup);
+});
+
+test('selected subject becomes the exact outgoing payload subject before any send',async()=>{
+ const {composeOutreachDraft}=await import('./navigation.js');
+ const {parseDraft,resolveGreetingPlaceholder}=await import('./pulse-format.js');
+ const {SendRequest}=await import('../../server/pulse/send-request.mjs');
+ const recipients=[{email:'person@example.com',name:'Anshul Gupta'}];
+ for(const subject of ['Original subject','Alternative subject']){
+  const draft=parseDraft(composeOutreachDraft(subject,'Dear [Name],\n\nPlease review the 8 MW opportunity.'));
+  const request=SendRequest.parse({...draft,body:resolveGreetingPlaceholder(draft.body,{mode:'separate',recipients}),mode:'separate',recordId:'alpha',recipients},{key:'h2-dev',assertChecks(){}});
+  const payload=request.calls()[0].payload;
+  assert.equal(payload.subject,subject);assert.match(payload.body_text,/Dear Anshul,/);assert.match(payload.body_text,/8 MW opportunity/);
+ }
 });

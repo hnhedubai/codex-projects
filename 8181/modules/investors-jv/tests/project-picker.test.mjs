@@ -17,7 +17,8 @@ import {SendRequest} from '../../../platform-shell/server/pulse/send-request.mjs
 import {PulseSendService} from '../../../platform-shell/server/pulse/send-service.mjs';
 import {parseDraft} from '../../../platform-shell/shared/js/pulse-format.js';
 
-const projects=listedProjects.map(outreachProject),green=partnerRecords.find(record=>record.id==='green-genius');
+// Keep the original six-project exhaustive fixture independent of later imports/holds.
+const projects=listedProjects.slice(0,6).map(project=>outreachProject({...project,stage:project.previousStage||project.stage})),green=partnerRecords.find(record=>record.id==='green-genius');
 const backup=new URL('../../../backups/outreach-before-project-picker-20261022-2211/',import.meta.url);
 test('Green Genius receives JV, introduction and acquisition; unknown intent has criteria check without a project',()=>{
  assert.deepEqual(pickerOptions(green),['jv','intro','investment']);
@@ -106,7 +107,7 @@ test('disabled picker leaves shared baseline renderer/prototypes and two saved p
 test('the actual false setting restores the original strict gate, not just the UI switch',async()=>{
  const directory=await mkdtemp(path.join(os.tmpdir(),'8181-picker-off-'));
  try{
-  const files=['modules/investors-jv/outreach-policy.js','modules/investors-jv/project-picker-rules.js','modules/listed-projects/data/source.js'];
+  const files=['modules/investors-jv/outreach-policy.js','modules/investors-jv/project-picker-rules.js','modules/listed-projects/data/source.js','modules/listed-projects/data/croatia-portfolio.js'];
   for(const file of files){const target=path.join(directory,file);await mkdir(path.dirname(target),{recursive:true});await copyFile(new URL('../../../'+file,import.meta.url),target);}
   await writeFile(path.join(directory,'package.json'),'{"type":"module"}');await writeFile(path.join(directory,'modules/investors-jv/outreach-settings.js'),"export const OUTREACH_PROJECT_PICKER=false;export const OUTREACH_DRAFT_V2=false;export const OUTREACH_SUBJECT_ANONYMITY='balanced';");
   const off=await import(pathToFileURL(path.join(directory,'modules/investors-jv/outreach-policy.js')).href);

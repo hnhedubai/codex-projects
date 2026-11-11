@@ -24,7 +24,7 @@ const fakePulse=(outcomes=[])=>{const calls=[];const queue=[...outcomes];return 
 
 test('registry builds all eight modules from pulse-modules.js and refuses duplicate keys',async()=>{
  const registry=await SendModuleRegistry.open(tempDir());
- assert.deepEqual(registry.all().map(module=>module.route),['/listed-projects','/wind-projects','/investors-jv','/hydrogen-offtakers','/e-saf','/ammonia','/gases','/diesel-en590']);
+ assert.deepEqual(registry.all().map(module=>module.route),['/listed-projects','/wind-projects','/investors-jv','/hydrogen-offtakers','/h2-dev','/h2-projects','/e-saf','/ammonia','/gases','/diesel-en590']);
  assert.equal(registry.get('other-gases').label,'Other Gases');
  assert.ok(registry.all().every(module=>module.history));
  assert.equal(registry.get('diesel-en590').requiredChecks.length,4);
@@ -183,7 +183,7 @@ test('routes: token, local-only, history and 405/404 behaviour',async()=>{
  const base=`http://127.0.0.1:${server.address().port}/api/pulse`;
  try{
   const status=await(await fetch(base+'/status')).json();
-  assert.equal(status.enabled,true);assert.match(status.token,/^[0-9a-f]{64}$/);assert.equal(Object.keys(status.modules).length,8);
+  assert.equal(status.enabled,true);assert.match(status.token,/^[0-9a-f]{64}$/);assert.equal(Object.keys(status.modules).length,Object.keys(pulseModules).length);
   const post=(key,body,token=status.token)=>fetch(`${base}/${key}/send`,{method:'POST',headers:{'Content-Type':'application/json','X-Pulse-Token':token},body:JSON.stringify(body)});
   assert.equal((await post('wind-projects',{...draft,recipients:people},'wrong')).status,403);
   assert.equal((await fetch(base+'/status',{headers:{Origin:'http://evil.example'}})).status,403);

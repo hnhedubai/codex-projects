@@ -11,7 +11,7 @@ const app=Object.create(context.ContactApp.prototype);
 const contact=(id,name)=>projects.find(item=>item.id===id).contacts.find(item=>item.name===name);
 
 test('audit retains all contacts and every added route has provenance and a qualification',()=>{
- assert.equal(corporateRouteAudit.contacts,236);
+ assert.equal(corporateRouteAudit.contacts,237); // Existing 236 plus user-referred Rafał Żendarski.
  assert.equal(projects.length,74);
  for(const project of projects)for(const item of project.contacts){
   assert.ok(item.corporateRouteStatus,item.name);

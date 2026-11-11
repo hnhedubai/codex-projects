@@ -1,10 +1,12 @@
 import {pulseModules,PULSE_MAX_RECIPIENTS} from './pulse-modules.js';
-import {parseDraft,placeholderPattern} from './pulse-format.js';
+import {parseDraft,placeholderPattern,resolveGreetingPlaceholder} from './pulse-format.js';
 import {isSourcedCorporateCandidate} from './contact-registry.js';
 import {OUTREACH_DRAFT_V2,OUTREACH_CATCHALL_CONSENT} from '../../../modules/investors-jv/outreach-settings.js';
 
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const NOT_SENDABLE=/candidate only|historical|not established|user-reported invalid/i;
+const NOT_OUTBOUND_DOMAINS=new Set(['weenergo.de','weenergo.ch','wegreenenergo.com','wegreenenergo.at']);
+const isInternalRecipient=email=>NOT_OUTBOUND_DOMAINS.has(String(email||'').trim().toLowerCase().split('@')[1]||'');
 
 /** Browser client for the 8181 Pulse API (/api/pulse/…). */
 export class PulseSendApi {
@@ -34,7 +36,7 @@ export class PulseSendController {
  attach(app){
   this.app=app;
   this.listeners?.abort();this.listeners=new AbortController();
-  app.root.addEventListener('input',event=>{if(event.target.matches('#outreach-draft'))this.#clearDisposable();},{signal:this.listeners.signal});
+  app.root.addEventListener('input',event=>{if(event.target.matches('#outreach-draft,#outreach-subject,#outreach-message'))this.draftChanged();},{signal:this.listeners.signal});
   app.root.addEventListener('click',event=>{if(event.target.closest('[data-pulse-disposable-send]')){event.preventDefault();this.sendDisposableAnyway();}},{signal:this.listeners.signal});
   app.root.addEventListener('change',event=>{
    if(event.target.matches('[data-pulse-disposable]'))this.#syncDisposableButton();
@@ -51,6 +53,7 @@ export class PulseSendController {
   app.root.addEventListener('click',event=>{const button=event.target.closest('[data-pulse-reoon]');if(!button)return;const detail=button.nextElementSibling;if(detail){detail.textContent=this.verificationDetails(button.dataset.pulseReoon);detail.hidden=!detail.hidden;button.setAttribute('aria-expanded',String(!detail.hidden));}},{signal:this.listeners.signal});
   return this;
  }
+ draftChanged(){this.#clearDisposable();this.catchAllPending=null;const section=this.#card()?.querySelector('[data-pulse-catchall-confirmation]');if(section)section.hidden=true;}
  detach(){this.listeners?.abort();this.disposablePending=null;}
  get checks(){return this.module.requiredChecks||[];}
  checksDone(recordId){const saved=this.app.windWorkflow(recordId).pulseChecks||{};return this.checks.every(check=>saved[check.id]===true);}
@@ -66,12 +69,38 @@ export class PulseSendController {
  refreshVerification(){
   this.app?.root.querySelectorAll?.('[data-pulse-reoon]').forEach(button=>{const label=this.verificationLabel(button.dataset.pulseReoon);button.style.color=label.startsWith('✓')?'#176b45':label.startsWith('✕')?'#a52d27':'#755516';});
   this.app?.root.querySelectorAll?.('[data-pulse-reoon]').forEach(button=>{const email=button.dataset.pulseReoon;button.textContent=this.verificationLabel(email);const detail=button.nextElementSibling;if(detail)detail.textContent=this.verificationDetails(email);
+   if(button.dataset.pulseHistoricalMailbox==='true'){const row=button.closest('tr'),input=row?.querySelector('[data-pulse-recipient]'),ready=this.historicalMailboxReady(email);if(input){input.disabled=!ready;if(!ready)input.checked=false;}const note=row?.querySelector('.outreach-recipient-status');if(note)note.textContent=this.historicalMailboxNote(email);}
    if(button.dataset.pulseCorporateCandidate==='true'){const row=button.closest('tr'),input=row?.querySelector('[data-pulse-recipient]'),ready=this.corporateMailboxReady(email);if(input){input.disabled=!ready;if(!ready)input.checked=false;}const note=row?.querySelector('.outreach-recipient-status');if(note)note.textContent=this.corporateCandidateNote(email);}
   });
+  this.#syncButton();
  }
  verificationDetails(email){const item=this.verification[email];return `${email} · ${item?`Provider: ${item.provider||'Reoon'} · Mode: ${item.mode||'unknown'} · Status: ${item.status||'unavailable'} · Deliverable: ${item.deliverable===true?'yes':'not confirmed'} · Checked: ${item.checkedAt||'not recorded'}${item.checkedAt?' · Dubai: '+new Date(item.checkedAt).toLocaleString('en-GB',{timeZone:'Asia/Dubai'}):''}${item.error?' · '+item.error:''}`:'No verification result recorded.'} · Mailbox verification does not prove person-email ownership.`;}
  corporateMailboxReady(email){const item=this.verification[email],age=Date.now()-Date.parse(item?.checkedAt);return item?.provider==='Reoon'&&item.mode==='power'&&item.deliverable===true&&['safe','role_account','catch_all'].includes(item.status)&&Number.isFinite(age)&&age>=-60000&&age<=30*86400000;}
  corporateCandidateNote(email){return `${this.corporateMailboxReady(email)?'Corporate business route; person-email association unconfirmed. Pulse still checks before sending.':'Not sendable until Reoon confirms a fresh safe corporate mailbox.'}`;}
+ // An old publication can identify a usable corporate mailbox without proving a current employee.
+ historicalCorporateRoute(record,contact,route){
+  if(this.path!=='/h2-dev'||!/^Historical published (?:work|business) email$/i.test(route.type||''))return false;
+  const restrictions=[contact.status,contact.roleStatus,contact.currentRoleStatus,contact.title,contact.role,route.status].filter(Boolean).join(' ');
+  if(contact.outreachEligible===false||/\bformer\b|replaced|not a current|moved employer|role ended|role ends|own profile ends|departed|no longer|current.role conflict|user-reported invalid|candidate only|not established/i.test(restrictions))return false;
+  const roleStatus=[contact.roleStatus,contact.currentRoleStatus].filter(Boolean).join(' ');
+  if(/historical/i.test(roleStatus)&&!/historical published/i.test(roleStatus))return false;
+  try{
+   const company=new URL(record.domainUrl||record.website||'').hostname.toLowerCase().replace(/^www\./,'');
+   const evidence=new URL(route.source||contact.source||'');
+   const domain=String(route.email||'').trim().toLowerCase().split('@')[1];
+   return ['http:','https:'].includes(evidence.protocol)&&!!company&&(domain===company||domain?.endsWith('.'+company));
+  }catch{return false;}
+ }
+ historicalMailboxReady(email){
+  const item=this.verification[email];
+  return this.corporateMailboxReady(email)&&item.status==='safe'&&item.isCatchAll!==true&&item.isDisposable!==true&&String(item.email||'').toLowerCase()===email;
+ }
+ historicalMailboxNote(email){
+  return this.historicalMailboxReady(email)?'Reoon: safe corporate mailbox. Older published address; person-email ownership and current employment are not confirmed.':'Not selectable until Reoon confirms a fresh safe corporate mailbox. Older published address; current employment unconfirmed.';
+ }
+ connectionHelp(){
+  return this.status==null?'Checking the Pulse connection…':this.status.enabled===true?`Sends through Pulse (api.grynh2.com). Pulse checks every recipient and adds your signature. Up to ${PULSE_MAX_RECIPIENTS} recipients per send.`:`Pulse is not connected${this.status.error?` (${this.status.error})`:''}. Set PULSE_SEND_KEY and restart 8181.`;
+ }
  async verifySelected(){
   const recordId=this.app.detailRecordId;
   for(const person of this.#selected()){
@@ -106,7 +135,8 @@ export class PulseSendController {
   if(app.sidebar){app.sidebar.sendHistory=projects;app.sidebar.refreshOutreachSignals();}
   const section=app.root?.querySelector?.('.outreach-send-history');
   if(section)section.innerHTML=app.renderSendHistorySync()+app.renderImportedOutreachHistory();
-  this.#syncButton();
+  const connection=app.root?.querySelector?.('[data-pulse-connection]');
+  if(connection)connection.textContent=this.connectionHelp();
   this.refreshVerification();
   return app.sendHistory;
  }
@@ -118,10 +148,12 @@ export class PulseSendController {
   const seen=new Set();const rows=[];
   for(const {contact,origin} of contacts)for(const route of this.app.contactEmailRoutes(contact)){
    const email=String(route.email||'').trim().toLowerCase();if(!email.includes('@')||seen.has(email))continue;seen.add(email);
-   const restriction=[contact.status,contact.roleStatus,contact.title,contact.role,route.status,route.type].filter(Boolean).join(' ');
+   if(isInternalRecipient(email))continue;
+   const restriction=[contact.status,contact.roleStatus,contact.currentRoleStatus,contact.title,contact.role,route.status,route.type].filter(Boolean).join(' ');
    const corporateCandidate=isSourcedCorporateCandidate(contact,route);
-   const blocked=corporateCandidate?!this.corporateMailboxReady(email):NOT_SENDABLE.test(restriction)||/\bformer\b|replaced|not a current/i.test(restriction);
-   rows.push({email,name:contact.name||'',title:contact.title||contact.role||'',origin,blocked,corporateCandidate,note:corporateCandidate?this.corporateCandidateNote(email):blocked?(contact.roleStatus||contact.status||route.status||'Historical or restricted route'):origin==='added'?'Added by you':route.status||route.type||'Published route'});
+   const historicalMailbox=this.historicalCorporateRoute(record,contact,route);
+   const blocked=historicalMailbox?!this.historicalMailboxReady(email):corporateCandidate?!this.corporateMailboxReady(email):NOT_SENDABLE.test(restriction)||/\bformer\b|replaced|not a current/i.test(restriction);
+   rows.push({email,name:contact.name||'',title:contact.title||contact.role||'',origin,blocked,corporateCandidate,historicalMailbox,note:historicalMailbox?this.historicalMailboxNote(email):corporateCandidate?this.corporateCandidateNote(email):blocked?(contact.roleStatus||contact.status||route.status||'Historical or restricted route'):origin==='added'?'Added by you':route.status||route.type||'Published route'});
   }
   return rows;
  }
@@ -132,14 +164,13 @@ export class PulseSendController {
  }
  renderCard(record){
   const rows=this.recipients(record);
-  const enabled=this.status?.enabled===true;
-  const help=this.status==null?'Checking the Pulse connection…':enabled?`Sends through Pulse (api.grynh2.com). Pulse checks every recipient and adds your signature. Up to ${PULSE_MAX_RECIPIENTS} recipients per send.`:`Pulse is not connected${this.status?.error?` (${esc(this.status.error)})`:''}. Set PULSE_SEND_KEY and restart 8181.`;
+  const help=esc(this.connectionHelp());
 const recipientRows=rows.length?rows.map(row=>`<tr><td><input type="checkbox" data-pulse-recipient="${esc(row.email)}" data-name="${esc(row.name)}" data-origin="${row.origin}"${OUTREACH_DRAFT_V2&&this.path==='/investors-jv'?` data-job-title="${esc(row.title)}"`:''} ${row.blocked?'disabled':''} aria-label="Select ${esc(row.email)}"></td><td><strong>${esc(row.name||'Unnamed contact')}</strong><br><small class="muted">${esc(row.title||'Role not recorded')}</small></td><td>${esc(row.email)}<br><span class="outreach-recipient-status">${esc(row.blocked?'Not sendable · '+row.note:row.note)}</span></td><td><select data-pulse-field="${esc(row.email)}" aria-label="Field for ${esc(row.email)}" hidden><option value="to">To</option><option value="cc">CC</option><option value="bcc">BCC</option></select></td></tr>`).join(''):'<tr><td colspan="4" class="wind-detail-empty">No email routes recorded. Add a contact on the Contacts tab.</td></tr>';
   const verifiedRows=recipientRows.replace(/(<td>)([^<]+)(<br><span class="outreach-recipient-status">)/g,(match,open,address,tail)=>{
-   const row=rows.find(row=>esc(row.email)===address);return row?`${open}${address}<br><button type="button" class="quiet" data-pulse-reoon="${esc(row.email)}" data-pulse-corporate-candidate="${row.corporateCandidate}" aria-expanded="false" title="View the saved Reoon verification result">${esc(this.verificationLabel(row.email))}</button><p hidden role="status">${esc(this.verificationDetails(row.email))}</p>${tail}`:match;
+   const row=rows.find(row=>esc(row.email)===address);return row?`${open}${address}<br><button type="button" class="quiet" data-pulse-reoon="${esc(row.email)}" data-pulse-corporate-candidate="${row.corporateCandidate}" data-pulse-historical-mailbox="${row.historicalMailbox}" aria-expanded="false" title="View the saved Reoon verification result">${esc(this.verificationLabel(row.email))}</button><p hidden role="status">${esc(this.verificationDetails(row.email))}</p>${tail}`:match;
   });
   const heading=this.module.deskHistory?'Send history (8181 and Wind Projects desk)':'Send history';
-  return `<section class="card wind-outreach-card wind-pulse-card" data-pulse-card><h2>Send with Pulse</h2><p class="muted">${help}</p><div class="outreach-mode"><label><input type="radio" name="pulse-mode" value="separate" data-pulse-mode checked> One by one (personal greeting)</label><label><input type="radio" name="pulse-mode" value="together" data-pulse-mode> One email (To / CC / BCC)</label></div><table class="outreach-recipients"><tbody>${verifiedRows}</tbody></table><p><button type="button" class="primary" data-detail-action="pulse-send" disabled>Send with Pulse</button></p><section class="pulse-catchall-confirmation" data-pulse-catchall-confirmation hidden><h3>Confirm catch-all addresses</h3><p>These domains accept all mail, so Pulse cannot confirm the mailbox exists. The message may bounce or go unread. I want to send to these addresses anyway.</p><div data-pulse-catchall-list></div><p><button type="button" class="primary" data-detail-action="pulse-send-anyway" disabled>Send anyway</button></p></section><section data-pulse-disposable-confirmation hidden><h3>Confirm company mailboxes flagged as disposable</h3><div data-pulse-disposable-list></div><p><button type="button" class="primary" data-pulse-disposable-send disabled>Send confirmed addresses anyway</button></p></section><p class="pulse-send-status" role="status" aria-live="polite"></p><h3>${heading}</h3><div class="outreach-send-history">${this.app.renderSendHistorySync()}${this.app.renderImportedOutreachHistory()}</div></section>`;
+  return `<section class="card wind-outreach-card wind-pulse-card" data-pulse-card><h2>Send with Pulse</h2><p class="muted" data-pulse-connection>${help}</p><div class="outreach-mode"><label><input type="radio" name="pulse-mode" value="separate" data-pulse-mode checked> One by one (personal greeting)</label><label><input type="radio" name="pulse-mode" value="together" data-pulse-mode> One email (To / CC / BCC)</label></div><p class="muted">In one-by-one mode, Dear [Name], is filled automatically for each named recipient.</p><table class="outreach-recipients"><tbody>${verifiedRows}</tbody></table><p><button type="button" class="primary" data-detail-action="pulse-send" disabled>Send with Pulse</button></p><section class="pulse-catchall-confirmation" data-pulse-catchall-confirmation hidden><h3>Confirm catch-all addresses</h3><p>These domains accept all mail, so Pulse cannot confirm the mailbox exists. The message may bounce or go unread. I want to send to these addresses anyway.</p><div data-pulse-catchall-list></div><p><button type="button" class="primary" data-detail-action="pulse-send-anyway" disabled>Send anyway</button></p></section><section data-pulse-disposable-confirmation hidden><h3>Confirm company mailboxes flagged as disposable</h3><div data-pulse-disposable-list></div><p><button type="button" class="primary" data-pulse-disposable-send disabled>Send confirmed addresses anyway</button></p></section><p class="pulse-send-status" role="status" aria-live="polite"></p><h3>${heading}</h3><div class="outreach-send-history">${this.app.renderSendHistorySync()}${this.app.renderImportedOutreachHistory()}</div></section>`;
  }
  /** Outreach tab for modules without the shared Wind draft layout (EN590). */
  renderOutreachTab(record,{title,draft}){
@@ -163,6 +194,7 @@ const recipientRows=rows.length?rows.map(row=>`<tr><td><input type="checkbox" da
   button.disabled=!ready||this.app.outreachSafety?.().safe===false;
   button.textContent=this.sending?'Sending…':count?`Send with Pulse (${count})`:'Send with Pulse';
   button.title=!this.checksDone(this.app.detailRecordId)?'Complete the checklist first':count>PULSE_MAX_RECIPIENTS?`Up to ${PULSE_MAX_RECIPIENTS} recipients`:'';
+  const safety=this.app.outreachSafety?.();if(safety?.safe===false)button.title=safety.message;
  }
  #syncCatchAllButton(){const button=this.#card()?.querySelector('[data-detail-action="pulse-send-anyway"]');if(!button)return;button.disabled=!this.#card().querySelector('[data-pulse-catchall]:checked')||this.sending;}
  #showCatchAllConfirmation(candidates){
@@ -187,7 +219,8 @@ const recipientRows=rows.length?rows.map(row=>`<tr><td><input type="checkbox" da
  #showDisposable(input,result){
   if(this.app.detailRecordId!==input.recordId||(this.app.pulse&&this.app.pulse!==this))return false;
   const current=parseDraft(this.app.root.querySelector('#outreach-draft')?.value||'');
-  if(current.subject!==input.subject||current.body!==input.body)return false;
+  const currentBody=resolveGreetingPlaceholder(current.body,{mode:input.mode,recipients:input.recipients});
+  if(current.subject!==input.subject||currentBody!==input.body)return false;
   const candidates=this.#disposableCandidates(result);if(!candidates.length)return false;
   const card=this.#card(),section=card?.querySelector('[data-pulse-disposable-confirmation]'),list=card?.querySelector('[data-pulse-disposable-list]');if(!section||!list)return false;
   this.disposablePending={input:structuredClone(input),candidates,recordId:this.app.detailRecordId,draft:this.app.root.querySelector('#outreach-draft')?.value||''};
@@ -218,14 +251,15 @@ const recipientRows=rows.length?rows.map(row=>`<tr><td><input type="checkbox" da
   this.#clearDisposable();
   const safety=this.app.outreachSafety?.();if(safety?.safe===false){this.#say(safety.message);return null;}
   const recordId=this.app.detailRecordId;
-  const {subject,body}=parseDraft(this.app.root.querySelector('#outreach-draft')?.value||'');
+  const draft=parseDraft(this.app.root.querySelector('#outreach-draft')?.value||'');
   const recipients=this.#selected();const mode=this.#mode();
+  const subject=draft.subject,body=resolveGreetingPlaceholder(draft.body,{mode,recipients});
   if(!subject){this.#say('Start the draft with a “Subject: …” line.');return null;}
   if(placeholderPattern.test(subject)||placeholderPattern.test(body)){this.#say('Replace the [placeholder] text in the draft first.');return null;}
   if(!recipients.length){this.#say('Select at least one recipient.');return null;}
   let offer;try{offer=this.app.projectOfferContext?.();}catch(error){this.#say(error.message);return null;}
   const list=recipients.map(item=>`${mode==='together'?item.field.toUpperCase()+' ':''}${item.email}`).join(', ');
-  const input={recordId,recordName:record.name||record.buyer||record.company||record.partner||'',mode,subject,body,recipients,...(offer?{offer}:{}),checks:this.app.windWorkflow(recordId).pulseChecks||{}};
+  const input={recordId,recordName:record.name||record.buyer||record.company||record.partner||'',mode,subject,body,recipients,...(offer?{offer}:{}),...(safety?.overridden===true?{draftSafetyOverride:true}:{}),checks:this.app.windWorkflow(recordId).pulseChecks||{}};
   this.sending=true;this.#syncButton();this.#say(`Sending through Pulse to ${list}…`);
   try{
    const result=await this.api.send(this.module.key,input);
@@ -242,6 +276,7 @@ const recipientRows=rows.length?rows.map(row=>`<tr><td><input type="checkbox" da
  }
  async sendAnyway(){
   if(this.sending||!this.catchAllPending)return null;
+  if(this.app.outreachSafety?.().safe===false||(this.catchAllPending.input.draftSafetyOverride&&!this.app.outreachSafety?.().overridden)){this.#say('The draft safety confirmation changed. Start a new send and review the current draft.');return null;}
   const checked=[...this.#card()?.querySelectorAll('[data-pulse-catchall]:checked')||[]].map(input=>input.value.toLowerCase());
   if(!checked.length){this.#say('Select at least one catch-all address to confirm.');return null;}
   const pending=this.catchAllPending,already=pending.sentEmails||new Set();

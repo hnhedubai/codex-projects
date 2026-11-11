@@ -8,8 +8,8 @@ export class ModuleLoader {
   this.cache.set(path,request);return request;
  }
  async read(path){
-  const {listedRows,windRows,partnerRows,hydrogenRows,loadLegacyRows}=await this.records();
-  const rows=path==='/listed-projects'?listedRows:path==='/wind-projects'?windRows:path==='/investors-jv'?partnerRows:path==='/hydrogen-offtakers'?hydrogenRows:await loadLegacyRows(path);
+  const {listedRows,windRows,partnerRows,hydrogenRows,h2DevRows,h2ProjectRows,loadLegacyRows}=await this.records();
+  const rows=path==='/listed-projects'?listedRows:path==='/wind-projects'?windRows:path==='/investors-jv'?partnerRows:path==='/hydrogen-offtakers'?hydrogenRows:path==='/h2-dev'?h2DevRows:path==='/h2-projects'?h2ProjectRows:await loadLegacyRows(path);
   let snapshot={};const url=this.snapshotUrl(path);
   if(url&&!(path==='/diesel-en590'&&rows.every(row=>row.source?.contactSnapshotLoaded))){
    const response=await this.fetchImpl(url);if(!response.ok)throw Error(`Contact data unavailable (HTTP ${response.status}).`);snapshot=await response.json();

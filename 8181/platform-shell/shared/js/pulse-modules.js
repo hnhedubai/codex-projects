@@ -8,6 +8,8 @@ export const pulseModules=Object.freeze({
  '/wind-projects':{key:'wind-projects',label:'Wind Projects',deskHistory:'/api/wind-projects/outreach-status'},
  '/investors-jv':{key:'investors-jv',label:'Investors & JV'},
  '/hydrogen-offtakers':{key:'hydrogen-offtakers',label:'Hydrogen Offtakers'},
+ '/h2-dev':{key:'h2-dev',label:'H2 Dev'},
+ '/h2-projects':{key:'h2-projects',label:'H2 Projects'},
  '/e-saf':{key:'e-saf',label:'e-SAF'},
  '/ammonia':{key:'ammonia',label:'Ammonia'},
  '/gases':{key:'other-gases',label:'Other Gases'},

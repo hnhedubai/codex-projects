@@ -19,7 +19,7 @@ export const examplePeople=[
  {name:'Sofía Martín',jobTitle:'Investment Analyst',email:'sofia@example.com'},
  {name:'Company team',jobTitle:'',email:'info@example.com'}
 ];
-const projects=listedProjects.map(outreachProject),module={key:'investors-jv',assertChecks(){}};
+const projects=listedProjects.slice(0,6).map(project=>outreachProject({...project,stage:project.previousStage||project.stage})),module={key:'investors-jv',assertChecks(){}};
 const request=(person,selection=[projects[0]],mode='separate')=>({recordId:'synthetic-fixture',mode,...parseDraft(buildDraftV2(selection,{person}).draft),recipients:[{...person,field:'to'}]});
 
 test('job titles classify seniority without mistaking vice presidents for presidents; greetings retain accents and never guess honorifics',()=>{
@@ -86,7 +86,7 @@ test('server checks subjects and personalized content before history or mock sen
 
 test('V2 off exactly matches the named backup for generated drafts, subject/body checks, picker markup, personalized calls and idempotency',async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'8181-v2-rollback-'));
- const files=['modules/investors-jv/project-picker-drafts.js','modules/investors-jv/project-picker.js','modules/investors-jv/project-picker-rules.js','modules/investors-jv/outreach-policy.js','modules/investors-jv/outreach-settings.js','modules/investors-jv/outreach-draft-v2.js','modules/investors-jv/outreach-export.js','modules/investors-jv/sectors.js','modules/listed-projects/data/source.js','platform-shell/server/pulse/send-request.mjs','platform-shell/shared/js/pulse-format.js','platform-shell/shared/js/pulse-modules.js'];
+ const files=['modules/investors-jv/project-picker-drafts.js','modules/investors-jv/project-picker.js','modules/investors-jv/project-picker-rules.js','modules/investors-jv/outreach-policy.js','modules/investors-jv/outreach-settings.js','modules/investors-jv/outreach-draft-v2.js','modules/investors-jv/outreach-export.js','modules/investors-jv/sectors.js','modules/listed-projects/data/source.js','modules/listed-projects/data/croatia-portfolio.js','platform-shell/server/pulse/send-request.mjs','platform-shell/shared/js/pulse-format.js','platform-shell/shared/js/pulse-modules.js'];
  const backup=new URL('../../../backups/outreach-subject-greeting-cta-20261023-1130/',import.meta.url);
  try{
   for(const kind of ['off','backup']){
@@ -94,7 +94,7 @@ test('V2 off exactly matches the named backup for generated drafts, subject/body
     await copyFile(source,destination);
    }
    await writeFile(path.join(root,kind,'package.json'),'{"type":"module"}');
-   if(kind==='off')await writeFile(path.join(root,kind,'modules/investors-jv/outreach-settings.js'),"export const OUTREACH_PROJECT_PICKER=true;export const OUTREACH_DRAFT_V2=false;export const OUTREACH_SUBJECT_ANONYMITY='balanced';");
+   if(kind==='off')await writeFile(path.join(root,kind,'modules/investors-jv/outreach-settings.js'),"export const OUTREACH_PROJECT_PICKER=true;export const OUTREACH_DRAFT_V2=false;export const OUTREACH_CATCHALL_CONSENT=true;export const OUTREACH_SUBJECT_ANONYMITY='balanced';");
   }
   const load=(kind,file)=>import(pathToFileURL(path.join(root,kind,file)).href);
   const off=await load('off','modules/investors-jv/project-picker-drafts.js'),old=await load('backup','modules/investors-jv/project-picker-drafts.js');
@@ -107,7 +107,7 @@ test('V2 off exactly matches the named backup for generated drafts, subject/body
   const currentPolicy=await load('off','modules/investors-jv/outreach-policy.js'),oldPolicy=await load('backup','modules/investors-jv/outreach-policy.js');
   for(const value of ['100-200 MW','two solar PV projects','Drin','Anonymous wind opportunity','20-minute call'])assert.deepEqual(currentPolicy.checkAnonymity(value),oldPolicy.checkAnonymity(value));
   const render=async kind=>{class App{bind(){}renderOutreachPanel(){return '<label for="investor-pitch-option">Message option</label>';}}class Navigation{restore(){}}
-   const {installProjectPicker}=await load(kind,'modules/investors-jv/project-picker.js');installProjectPicker({OpportunityPlatformApp:App,PlatformNavigation:Navigation});const app=new App();Object.assign(app,{path:'/investors-jv',detailRecordId:'test',rows:[{id:'test',source:{sectors:['Solar PV']}}],windWorkflow:()=>({}),escape:String});return app.renderOutreachPanel({sectors:['Solar PV']});};
+   const {installProjectPicker}=await load(kind,'modules/investors-jv/project-picker.js');installProjectPicker({OpportunityPlatformApp:App,PlatformNavigation:Navigation,projects});const app=new App();Object.assign(app,{path:'/investors-jv',detailRecordId:'test',rows:[{id:'test',source:{sectors:['Solar PV']}}],windWorkflow:()=>({}),escape:String});return app.renderOutreachPanel({sectors:['Solar PV']});};
   assert.equal(await render('off'),await render('backup'));
  }finally{await rm(root,{recursive:true,force:true});}
 });

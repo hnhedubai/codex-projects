@@ -44,6 +44,18 @@ export function collectPublishedEmails(records){
  }
  return emails;
 }
+// Automatic verification accepts every valid stored address. Source URLs are
+// provenance metadata only; they are not a prerequisite for mailbox checking.
+export function collectContactEmails(records){
+ const emails=new Set();
+ for(const record of records)for(const contact of record.contacts||[]){
+  for(const item of [contact.email,...(contact.emails||[]),...(contact.corporateRoutes||[])]){
+   const route=typeof item==='string'?{email:item}:item;
+   if(validAddress(route?.email))emails.add(normalizeEmail(route.email));
+  }
+ }
+ return emails;
+}
 export async function createReoonService({root,apiKey,fetchImpl=fetch,allowedEmails=new Set(),now=()=>new Date().toISOString(),persist=atomicJson,requestTimeoutMs=90000,maxQueue=10}){
  const key=apiKey===undefined?await loadReoonKey(root):apiKey;
  const file=path.join(root,'platform-shell','data','reoon-results.json');
@@ -96,10 +108,10 @@ export async function createReoonService({root,apiKey,fetchImpl=fetch,allowedEma
   },
   verify(emails,{refresh=false}={}){
    if(storeError)throw fail(storeError,503);
-   if(!Array.isArray(emails)||!emails.length||emails.length>5)throw fail('Verify between one and five sourced addresses per request.',422);
+   if(!Array.isArray(emails)||!emails.length||emails.length>5)throw fail('Verify between one and five stored email addresses per request.',422);
    if(emails.some(email=>!validAddress(email)))throw fail('Valid email addresses required.',422);
    const unique=[...new Set(emails.map(normalizeEmail))];
-   if(unique.some(email=>!allowedEmails.has(email)))throw fail('Only published email routes in the app can be verified.',422);
+   if(unique.some(email=>!allowedEmails.has(email)))throw fail('Only email addresses present in the app can be verified.',422);
    if(queued>=maxQueue)throw fail('Reoon queue is busy. Wait for existing checks to finish.',429);
    queued++;
    return serial(async()=>{
@@ -120,6 +132,17 @@ export async function createReoonService({root,apiKey,fetchImpl=fetch,allowedEma
     }
     return output;
    }).finally(()=>{queued--;});
+  },
+  async verifyAll({emails=[...allowedEmails]}={}){
+   const nowMs=Date.parse(now()),unique=[...new Set(emails.map(normalizeEmail).filter(validAddress))];
+   const candidates=unique.filter(email=>{const checked=Date.parse(store.results[email]?.checkedAt);return !Number.isFinite(checked)||nowMs-checked>30*86400000;});
+   const checked=[],failed=[];
+   for(let index=0;index<candidates.length;index+=5){
+    const batch=candidates.slice(index,index+5);
+    try{checked.push(...await this.verify(batch,{refresh:true}));}
+    catch(error){failed.push({emails:batch,error:error.message});}
+   }
+   return {total:unique.length,candidates:candidates.length,checked,failed};
   }
  };
 }

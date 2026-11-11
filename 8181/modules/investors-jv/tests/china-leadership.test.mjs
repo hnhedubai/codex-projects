@@ -4,8 +4,8 @@ import {partnerRecords,partnerContacts} from '../data/source.js';
 import {chinaSolarResearch,chinaLeadershipResearch,applyChinaLeadership} from '../data/china-solar-research.js';
 
 test('Chinese-company contact pass covers all 25 records without dropping portfolio records',()=>{
- assert.equal(partnerRecords.length,75);
- assert.equal(new Set(partnerRecords.map(row=>row.id)).size,75);
+ assert.ok(partnerRecords.length>=75,'retain the original portfolio while allowing later company additions');
+ assert.equal(new Set(partnerRecords.map(row=>row.id)).size,partnerRecords.length);
  assert.equal(chinaSolarResearch.length,25);
  for(const record of chinaSolarResearch){
   const cards=partnerContacts[record.id];
@@ -30,7 +30,7 @@ test('all published regional routes are retained separately from individual mail
     assert.ok(card.corporateRoutes.some(route=>route.email===email));
     assert.notEqual(card.email,email);
    }
-   assert.equal(card.research.verification,'No Reoon check performed.');
+   assert.equal(card.research.verification,batch.id==='astronergy-europe'&&person.emailSource?'Consult the saved Reoon Power result for current mailbox status; research is not verification.':'No Reoon check performed.');
   }
  }
 });

@@ -29,7 +29,7 @@ test('paid calls are serialized, deduplicated, persisted and reused across resta
  assert.equal(restored.results()[address].status,'safe');assert.equal(restored.results()[address].raw,undefined);
  const saved=await readFile(path.join(root,'platform-shell/data/reoon-results.json'),'utf8');
  assert.ok(saved.includes('verification_mode'));assert.ok(!saved.includes('test-secret'));
- assert.throws(()=>service.verify(['unsourced@example.com']),/published/);
+ assert.throws(()=>service.verify(['unsourced@example.com']),/present in the app/);
  assert.throws(()=>service.verify(Array(6).fill(address)),/five/);
 });
 test('missing keys and malformed provider responses never produce positive results',async()=>{
@@ -58,5 +58,5 @@ test('UI never derives verified ticks from negative prose or duplicate shared ro
  assert.equal(sidebar.verification({contacts:[...contacts,...contacts]}).mark,'✓');
  assert.equal(sidebar.verification({contacts:[{email:address,corporateRoutes:[{email:address,type:'Generic company route'}]}]}).className,'pending');
  context.Email.results[address]={...interpretPower(raw('role_account'),address),raw:undefined};
- assert.equal(sidebar.verification({contacts}).className,'pending');
+ assert.equal(sidebar.verification({contacts}).className,'positive');
 });

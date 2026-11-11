@@ -24,6 +24,7 @@ export class SendRequest {
   const recordId=text(input.recordId,200);
   if(!recordId)throw new SendError('Send request needs a record.');
   const mode=input.mode;
+  if(input.draftSafetyOverride!==undefined&&(typeof input.draftSafetyOverride!=='boolean'||module.key!=='investors-jv'))throw new SendError('Draft safety override is valid only for Investors & JV and requires explicit confirmation.',400);
   if(!['separate','together'].includes(mode))throw new SendError('Choose one by one or one email (To / CC / BCC).');
   const subject=text(input.subject,1000),body=text(input.body,40000);
   if(!subject||subject.length>300)throw new SendError('The draft needs a subject line (Subject: …) of up to 300 characters.');
@@ -65,7 +66,7 @@ export class SendRequest {
    const ids=[...new Set(input.offer.projectIds)];
    offerProjects=ids.map(id=>{const project=listedProjects.find(project=>project.id===id);if(!project)throw new SendError('Unknown offered project. Reload the project list.');return outreachProject(project);});
   }
-  return new SendRequest({module:module.key,recordId,recordName:text(input.recordName,300),mode,subject,body,recipients,offerProjects,catchAllOverride,disposableOverride});
+  return new SendRequest({module:module.key,recordId,recordName:text(input.recordName,300),mode,subject,body,recipients,offerProjects,catchAllOverride,disposableOverride,draftSafetyOverride:input.draftSafetyOverride===true});
  }
  constructor(values){Object.assign(this,values);Object.freeze(this);}
  #key(parts){const ids=(this.offerProjects||[]).map(project=>project.id).sort();const overrides=(this.catchAllOverride||[]).slice().sort();return `oplatform:${this.module}:`+createHash('sha256').update([...parts,...(ids.length?['offer-projects',...ids]:[]),...(overrides.length?['catch-all',...overrides]:[]),...(this.disposableOverride?.length?['disposable',...this.disposableOverride.slice().sort()]:[])].join('|')).digest('hex');}

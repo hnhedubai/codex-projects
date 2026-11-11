@@ -9,9 +9,9 @@ import {contactModules,contactSnapshotUrl,hydrateContactRows} from '../shared/js
 import {loadContactCatalog} from './contact-catalog.mjs';
 import {createReoonService} from './reoon.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
-test('all eight module paths are registered and EN590 sourced emails are accepted',async()=>{
+test('all registered module paths are registered and EN590 sourced emails are accepted',async()=>{
  const catalog=await loadContactCatalog(root);
- assert.equal(Object.keys(catalog.modules).length,8);
+ assert.equal(Object.keys(catalog.modules).length,10);
  for(const module of Object.keys(contactModules))assert.equal(catalog.modules[module].enabled,true);
  assert.ok(catalog.allowedEmails.has('bunkerspain.trading@repsol.com'));
  assert.ok(!catalog.allowedEmails.has('not publicly verified'));
@@ -39,18 +39,18 @@ test('sourced local contacts in every module can verify and reuse one cached mai
  }
  assert.equal(calls,1);
  assert.ok((await loadContactCatalog(temporary)).allowedEmails.has('fixture@example.com'));
- assert.throws(()=>catalog.register({module:'/not-a-module'},['new@example.com']),/source URL/);
- assert.throws(()=>catalog.register({module:'/hydrogen-offtakers',recordId:'id',name:'Person',email:'new@example.com'},['new@example.com']),/source URL/);
+ assert.throws(()=>catalog.register({module:'/not-a-module'},['new@example.com']),/Contact context is required/);
+ await catalog.register({module:'/hydrogen-offtakers',recordId:'id',name:'Person',email:'new@example.com'},['new@example.com']);
 });
-test('EN590 uses the same contact renderer with source and Reoon controls',async()=>{
+test('EN590 uses the same contact renderer with automatic Reoon verification',async()=>{
  const source=await readFile(new URL('../shared/js/platform-app.js',import.meta.url),'utf8');
  const context=vm.createContext({document:{addEventListener(){}},window:{location:{origin:'http://localhost:8181'}},URL});
  vm.runInContext(source.replace(/export class /g,'class ')+'\nglobalThis.App=OpportunityPlatformApp;',context);
  const app=Object.create(context.App.prototype);app.path='/diesel-en590';app.detailRecordId='refinery';app.windWorkflow=()=>({});
  const markup=app.renderEn590ProfilePanel({contacts:[{name:'Published route',email:'route@example.com',source:'https://example.com/contact'}]},'contacts');
- assert.match(markup,/data-reoon-email="route@example.com"/);
  assert.match(markup,/data-reoon-module="\/diesel-en590"/);
- assert.match(markup,/data-reoon-source="https:\/\/example.com\/contact"/);
+ assert.match(markup,/href="https:\/\/example.com\/contact"/);
  assert.match(markup,/id="contact-source"/);
- assert.match(markup,/Check Reoon connection/);
+ assert.match(markup,/Reoon verification runs automatically/);
+ assert.doesNotMatch(markup,/data-reoon-email="route@example.com"|Check Reoon connection|Verify with Reoon|Recheck with Reoon/);
 });

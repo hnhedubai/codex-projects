@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 
 const source=await readFile(new URL('./platform-app.js',import.meta.url),'utf8');
-const modules=['/wind-projects','/investors-jv','/hydrogen-offtakers','/e-saf','/ammonia','/gases','/diesel-en590'];
+const modules=['/wind-projects','/investors-jv','/hydrogen-offtakers','/h2-dev','/h2-projects','/e-saf','/ammonia','/gases','/diesel-en590'];
 const contactKey='oplatform:/diesel-en590:imported-refinery-contacts';
 const csv='company,asset,name,role,email,country,source,phone,notes\nNew Co,New Refinery,New Person,CEO,new@example.com,Spain,https://new.example,222,New note';
 function setup(confirm=true){
@@ -90,4 +90,10 @@ test('failure to create backup stops writes; partial failure restores previous v
  const storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>{if(key==='two'&&!failed){failed=true;throw Error('quota');}values.set(key,value);},removeItem:key=>values.delete(key)};
  assert.throws(()=>G.commit(storage,'/wind-projects',[['one','new one'],['two','new two']]),/previous values restored/);
  assert.equal(values.get('one'),'old one');assert.equal(values.get('two'),'old two');assert.ok([...values.keys()].some(key=>key.startsWith('oplatform-import-backup:')));
+});
+
+test('saved outreach subject options survive workspace import and malformed lists are rejected',()=>{
+ const {WorkspaceImportGuard:G}=setup();const state={alpha:{outreachSubjects:['Original subject','Alternate subject'],outreachDraft:'Subject: Alternate subject\n\nKeep my body',outreachNotes:'Keep notes'}};
+ const raw=JSON.stringify(state);assert.ok(G.snapshot(snapshot('/h2-dev',{'detail-workflow':raw}),'/h2-dev'));
+ for(const subjects of [null,'Subject',[3],[''],['x','x'],['first\nsecond'],['x'.repeat(301)]])assert.throws(()=>G.snapshot(snapshot('/h2-dev',{'detail-workflow':JSON.stringify({alpha:{outreachSubjects:subjects}})}),'/h2-dev'),/subjects/);
 });

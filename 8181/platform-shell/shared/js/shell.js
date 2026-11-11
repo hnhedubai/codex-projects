@@ -9,13 +9,16 @@ import {installInvestorSectors} from '/modules/investors-jv/sectors.js';
 import {installOutreachExport} from '/shared/js/outreach-export.js';
 import {installProjectPicker} from '/modules/investors-jv/project-picker.js';
 import {installOfferHistory} from '/modules/investors-jv/offer-history.js';
+import {installContactControlRoom} from '/modules/investors-jv/contact-room.js';
+import {installH2Campaign} from '/modules/h2-projects/campaign-ui.js';
 
-installListedProjectViews({OpportunityPlatformApp,PipelineView});
+installListedProjectViews({OpportunityPlatformApp,PipelineView,SidebarController,PlatformNavigation});
 installInvestorOutreach({OpportunityPlatformApp,PlatformNavigation});
 installInvestorSectors({OpportunityPlatformApp,PipelineView,SidebarController});
 installOutreachExport({OpportunityPlatformApp,PlatformNavigation});
 installProjectPicker({OpportunityPlatformApp,PlatformNavigation});
 installOfferHistory({OpportunityPlatformApp,PlatformNavigation});
+installH2Campaign({OpportunityPlatformApp,PlatformNavigation});
 
 const loader=new ModuleLoader({records:()=>import('/data/records.js'),snapshotUrl:contactSnapshotUrl,hydrate:hydrateContactRows});
 async function loadModule(path){
@@ -29,6 +32,7 @@ async function loadModule(path){
  }catch{return rows;}
 }
 const navigation=new PlatformNavigation({root:document.querySelector('#app'),workspaces,loadModule});
+installContactControlRoom({navigation,SidebarController,EmailVerification});
 
 document.addEventListener('reoon-results-updated',()=>{
  const app=navigation.app;if(!app)return;

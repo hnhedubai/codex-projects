@@ -36,6 +36,7 @@ export class SendHistoryStore {
    recipients:request.recipients.map(({email,name,field,origin})=>({email,name,field,origin})),
    offerProjects:structuredClone(request.offerProjects||[]),verification:structuredClone(request.verification||[]),...(request.catchAllOverride?.length?{catchAllOverride:[...request.catchAllOverride]}:{}),
    ...(request.disposableOverride?.length?{disposableOverride:[...request.disposableOverride]}:{}),
+   ...(request.draftSafetyOverride===true?{draftSafetyOverride:{confirmed:true,at:this.#now(),scope:'draft-disclosure-only'}}:{}),
    messages:request.calls().map(({emails,payload})=>({emails,subject:payload.subject,body:payload.body_text})),
    results:[],summary:{sent:0,blocked:0,failed:0}};
   return this.#edit(next=>{next.sends.push(entry);return entry.id;});
@@ -44,7 +45,7 @@ export class SendHistoryStore {
   return this.#edit(next=>{
    const entry=next.sends.find(item=>item.id===id);if(!entry)throw Error('Send history entry not found.');
    Object.assign(entry,{status:'done',completedAt:this.#now(),summary,...(pulseVerification.length?{pulseVerification:structuredClone(pulseVerification)}:{}),
-    results:results.map(({emails,status,httpStatus,error,emailMessageId,replay,attemptedAt,completedAt})=>({emails,status,httpStatus:httpStatus??0,error:error||'',emailMessageId:emailMessageId||null,replay:!!replay,...(attemptedAt?{attemptedAt}:{}),...(completedAt?{completedAt}:{})}))});
+    results:results.map(({emails,status,httpStatus,error,emailMessageId,replay,attemptedAt,completedAt,scheduledId,scheduledAt})=>({emails,status,httpStatus:httpStatus??0,error:error||'',emailMessageId:emailMessageId||null,replay:!!replay,...(scheduledId?{scheduledId,scheduledAt}:{}),...(attemptedAt?{attemptedAt}:{}),...(completedAt?{completedAt}:{})}))});
    return structuredClone(entry);
   });
  }
@@ -66,13 +67,14 @@ export class SendHistoryStore {
    if(send.status==='sending')project.pendingCount+=1;
    for(const result of send.results){
     const count=emailCount(result);
-    if(result.status==='sent')project.sentCount+=count;else if(result.status==='blocked')project.blockedCount+=count;else project.failedCount+=count;
+    if(result.status==='scheduled'){project.scheduledCount=(project.scheduledCount||0)+count;project.scheduledAt=(!project.scheduledAt||result.scheduledAt<project.scheduledAt)?result.scheduledAt:project.scheduledAt;}else if(result.status==='sent')project.sentCount+=count;else if(result.status==='blocked')project.blockedCount+=count;else project.failedCount+=count;
    }
    if(send.results.some(result=>result.status==='sent')&&(!project.lastSentAt||send.at>project.lastSentAt))project.lastSentAt=send.at;
    project.history.push({id:send.id,at:send.at,status:send.status,mode:send.mode,subject:send.subject,verification:send.verification||[],...(send.catchAllOverride?.length?{catchAllOverride:[...send.catchAllOverride]}:{}),
     ...(send.module==='investors-jv'?{recordId:send.recordId,recordName:send.recordName,completedAt:send.completedAt||null,recordedAt:send.recordedAt||null,source:send.source||'pulse',body:send.body,offerProjects:send.offerProjects||[],messages:send.messages||[],offerStatus:send.offerStatus||'',offerEvents:send.offerEvents||[]}:{}),
+    ...(send.draftSafetyOverride?{draftSafetyOverride:structuredClone(send.draftSafetyOverride)}:{}),
     recipients:send.recipients.map(({email,name,field})=>({email,name,field})),
-    results:send.results.map(({emails,status,error,attemptedAt,completedAt,replay,reported})=>({emails,status,error,...(attemptedAt?{attemptedAt,completedAt}:{}),...(replay?{replay:true}:{}),...(reported?{reported:true}:{})}))});
+    results:send.results.map(({emails,status,error,attemptedAt,completedAt,replay,reported,scheduledId,scheduledAt})=>({emails,status,error,...(scheduledId?{scheduledId,scheduledAt}:{}),...(attemptedAt?{attemptedAt,completedAt}:{}),...(replay?{replay:true}:{}),...(reported?{reported:true}:{})}))});
   }
   for(const project of Object.values(projects))project.history.sort((a,b)=>b.at.localeCompare(a.at));
   return structuredClone({available:true,generatedAt:this.#now(),projects});

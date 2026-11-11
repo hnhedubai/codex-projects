@@ -1,4 +1,4 @@
-export const SECTOR_OPTIONS=Object.freeze(['Wind','Solar PV','e-SAF','Hybrid','BESS','Hydrogen','Ammonia','Other']);
+export const SECTOR_OPTIONS=Object.freeze(['Wind','Solar PV','e-SAF','Hybrid','BESS','Hydrogen','Ammonia','Hydropower','Other']);
 const path='/investors-jv';
 export function normalizeSectors(values){return SECTOR_OPTIONS.filter(sector=>Array.isArray(values)&&values.includes(sector));}
 /** Existing classification only. A sector is not evidence of a current investment mandate. */
@@ -6,7 +6,7 @@ export function defaultSectors(row){
  const source=row.source||row;
  if(Array.isArray(source.sectors))return normalizeSectors(source.sectors);
  const text=String(source.subSector||'');
- return SECTOR_OPTIONS.filter(sector=>({Wind:/\bwind\b/i,'Solar PV':/\bsolar\b|\bpv\b/i,'e-SAF':/\be-saf\b/i,Hybrid:/\bhybrid\b/i,BESS:/\bbess\b|\bstorage\b/i,Hydrogen:/\bhydrogen\b/i,Ammonia:/\bammonia\b/i,Other:/$a/}[sector]).test(text));
+ return SECTOR_OPTIONS.filter(sector=>({Wind:/\bwind\b/i,'Solar PV':/\bsolar\b|\bpv\b/i,'e-SAF':/\be-saf\b/i,Hybrid:/\bhybrid\b/i,BESS:/\bbess\b|\bstorage\b/i,Hydrogen:/\bhydrogen\b/i,Ammonia:/\bammonia\b/i,Hydropower:/\bhydropower\b|\bhydroelectric(?:ity)?\b/i,Other:/$a/}[sector]).test(text));
 }
 export function sectorState(storage,row){
  const raw=storage.getItem(`oplatform:${path}:detail-workflow`),all=raw?JSON.parse(raw):{};
@@ -86,7 +86,7 @@ export function installInvestorSectors({OpportunityPlatformApp:App,PipelineView:
     sectorState(localStorage,row);
     const sectors=normalizeSectors([...picker.querySelectorAll('[data-investor-sector]:checked')].map(item=>item.dataset.investorSector));
     this.saveWindWorkflow(row.id,{sectors});summary.textContent=sectors.join(' · ')||'Select sectors';
-    if(this.sidebar){const selected=this.sidebar.signalFilter.value;this.sidebar.populateFilters();this.sidebar.saveState();this.sidebar.render();if(selected&&!sectors.includes(selected))this.pipeline.render();}
+    if(this.sidebar){this.sidebar.populateFilters();this.sidebar.saveState();this.sidebar.render();this.pipeline.render();}
    }catch{input.checked=!input.checked;summary.textContent='Not saved — storage unavailable';this.navigation?.status('Sector change was not saved. Existing company data has not been replaced.');}
   });
   return result;

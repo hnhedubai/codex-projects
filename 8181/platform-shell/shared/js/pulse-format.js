@@ -72,3 +72,12 @@ export function personalise(body,name){
  const re=/^([ \t]*)Dear\b[^\n,]*,/im;
  return re.test(body)?body.replace(re,(_,indent)=>`${indent}Dear ${who},`):`Dear ${who},\n\n${body}`;
 }
+
+/** Resolve only the personal salutation token; leave every other placeholder for validation.
+ * The server still builds a separate greeting for each selected recipient.
+ */
+export function resolveGreetingPlaceholder(body,{mode,recipients=[]}={}){
+ if(mode!=='separate'||!recipients.length||recipients.some(person=>!greetingName(person.name)||placeholderPattern.test(String(person.name||''))))return body;
+ const who=greetingName(recipients[0].name);
+ return String(body).replace(/^([ \t]*Dear[ \t]+)\[Name\]([ \t]*,[ \t]*)$/im,()=>`Dear ${who},`);
+}

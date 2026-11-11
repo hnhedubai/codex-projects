@@ -1,3 +1,4 @@
+import {SendRequest} from '../../server/pulse/send-request.mjs';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
@@ -85,7 +86,7 @@ test('real local preflight disposable block shows consent before any Pulse call,
 });
 
 test('every 8181 module gets a controller; unknown routes do not',()=>{
- for(const path of ['/listed-projects','/wind-projects','/investors-jv','/hydrogen-offtakers','/e-saf','/ammonia','/gases','/diesel-en590'])assert.ok(PulseSendController.forPath(path,{}),path);
+ for(const path of ['/listed-projects','/wind-projects','/investors-jv','/hydrogen-offtakers','/h2-dev','/h2-projects','/e-saf','/ammonia','/gases','/diesel-en590'])assert.ok(PulseSendController.forPath(path,{}),path);
  assert.equal(PulseSendController.forPath('/nda-guard',{}),null);
 });
 
@@ -120,6 +121,17 @@ test('the Outreach card is live and lists published and added contacts; candidat
  assert.match(html,/data-pulse-recipient="guess@example.com"[^>]*disabled/);
  assert.match(html,/<h3>Send history<\/h3>/);
  assert.equal((html.match(/wind-pulse-card/g)||[]).length,1);
+});
+
+test('company-owned Weenergo routes are excluded from outbound recipient selection',()=>{
+ const {pulse}=setup('/investors-jv');
+ const rows=pulse.recipients({contacts:[
+  {name:'Internal DE',email:'office@weenergo.de'},
+  {name:'Internal CH',email:'management@weenergo.ch'},
+  {name:'Internal public site',email:'team@wegreenenergo.com'},
+  {name:'Prospect',email:'person@example.com'}
+ ]});
+ assert.deepEqual(rows.map(row=>row.email),['person@example.com']);
 });
 
 test('disconnected Pulse explains how to connect',async()=>{
@@ -164,4 +176,111 @@ test('EN590 Outreach shows the checklist and stays locked until every item is ti
  assert.equal(pulse.checksDone('alpha'),false);
  localStorage.setItem(app.detailWorkflowKey,JSON.stringify({alpha:{pulseChecks:{entity:true,product:true,authority:true,compliance:true}}}));
  assert.equal(pulse.checksDone('alpha'),true);
+});
+
+test('Hygenco historical published mailboxes unlock only after fresh safe Reoon, preserving identity warnings and records',async()=>{
+ const {h2DeveloperRecords}=await import('../../../modules/h2-dev/data/source.js');
+ const record=h2DeveloperRecords.find(row=>row.id==='h2global10:hygenco');
+ assert.ok(record);const original=JSON.stringify(record);
+ const {pulse}=setup('/h2-dev');
+ for(const email of ['anshul@hygenco.in','akshay.mohan@hygenco.in']){
+  assert.equal(pulse.recipients(record).find(row=>row.email===email).blocked,true);
+  const safe={email,provider:'Reoon',mode:'power',status:'safe',deliverable:true,checkedAt:new Date().toISOString()};
+  pulse.verification[email]=safe;
+  const row=pulse.recipients(record).find(row=>row.email===email);
+  assert.equal(row.blocked,false,email);assert.equal(row.historicalMailbox,true);
+  assert.match(row.note,/current employment.*not confirmed/);
+  for(const change of [{status:'unknown'},{status:'invalid',deliverable:false},{status:'catch_all'},{isCatchAll:true},{provider:'Other'},{mode:'quick'},{email:'wrong@hygenco.in'},{checkedAt:'2000-01-01'},{checkedAt:new Date(Date.now()+120000).toISOString()}]){
+   pulse.verification[email]={...safe,...change};
+   assert.equal(pulse.recipients(record).find(row=>row.email===email).blocked,true,JSON.stringify(change));
+  }
+  pulse.verification[email]=safe;
+ }
+ assert.equal(JSON.stringify(record),original);
+ const html=pulse.renderCard(record);
+ assert.doesNotMatch(html,/data-pulse-recipient="(?:anshul|akshay.mohan)@hygenco.in"[^>]*disabled/);
+ assert.match(html,/data-pulse-historical-mailbox="true"/);
+});
+
+test('safe historical publication never overrides known departure, invalidity, unrelated domain or other modules',()=>{
+ const {pulse}=setup('/h2-dev'),email='person@company.example';
+ const contact={name:'Person',status:'Historical published address; current mailbox unconfirmed',emails:[{email,type:'Historical published work email',source:'https://company.example/news'}]};
+ pulse.verification[email]={email,provider:'Reoon',mode:'power',status:'safe',deliverable:true,checkedAt:new Date().toISOString()};
+ const record={domainUrl:'https://company.example',contacts:[contact]};
+ assert.equal(pulse.recipients(record)[0].blocked,false);
+ for(const change of [{title:'Former CEO'},{roleStatus:'Historical — own profile ends role January 2024'},{currentRoleStatus:'Former — moved employer'},{outreachEligible:false},{status:'User-reported invalid'},{currentRoleStatus:'Historical role only — current remit not established'}]){
+  assert.equal(pulse.recipients({...record,contacts:[{...contact,...change}]})[0].blocked,true,JSON.stringify(change));
+ }
+ assert.equal(pulse.recipients({...record,domainUrl:'https://unrelated.example'})[0].blocked,true);
+ for(const module of ['/wind-projects','/investors-jv']){
+  const other=setup(module).pulse;other.verification=pulse.verification;
+  assert.equal(other.recipients(record)[0].blocked,true);
+ }
+});
+
+test('late saved verification enables mounted checkbox, removes it again if unsafe, and updates connection text',async()=>{
+ const {app,pulse}=setup('/h2-dev'),email='person@company.example';
+ const input={disabled:true,checked:false},note={textContent:''},connection={textContent:'Checking the Pulse connection…'};
+ const row={querySelector:selector=>selector==='[data-pulse-recipient]'?input:note};
+ const button={dataset:{pulseReoon:email,pulseHistoricalMailbox:'true'},style:{},nextElementSibling:{textContent:''},closest:()=>row};
+ app.root.querySelectorAll=selector=>selector==='[data-pulse-reoon]'?[button]:[];
+ app.root.querySelector=selector=>selector==='[data-pulse-connection]'?connection:null;
+ pulse.api.reoonResults=async()=>({results:{[email]:{email,provider:'Reoon',mode:'power',status:'safe',deliverable:true,checkedAt:new Date().toISOString()}}});
+ await pulse.refresh();assert.equal(input.disabled,false);assert.match(connection.textContent,/Sends through Pulse/);assert.match(note.textContent,/current employment/);
+ input.checked=true;pulse.verification[email].status='invalid';pulse.refreshVerification();
+ assert.equal(input.disabled,true);assert.equal(input.checked,false);
+ pulse.status={enabled:false,error:'Configuration unavailable'};await pulse.refresh();
+ assert.match(connection.textContent,/not connected.*Configuration unavailable/);
+});
+
+test('Dear [Name] is resolved before server validation, with separate correct personal greetings and saved draft unchanged',async()=>{
+ const ui=disposableUI();
+ const inputs=ui.app.root.querySelector('[data-pulse-card]').querySelectorAll('[data-pulse-recipient]:checked');
+ inputs[0].dataset.name='Anshul Gupta';inputs[1].dataset.name='Akshay Mohan';
+ ui.draft.value='Subject: 8 MW hydrogen opportunity\n\nDear [Name],\n\nMay we discuss a development partnership?\n\nKind regards,';
+ const saved=ui.draft.value;const calls=[];
+ ui.pulse.api.send=async(key,input)=>{
+  const request=SendRequest.parse(input,{key:'h2-dev',assertChecks(){}});
+  calls.push(...request.calls());
+  return {summary:{sent:2,blocked:0,failed:0},results:[],verification:[]};
+ };
+ await ui.pulse.send({name:'Hygenco'});
+ assert.equal(calls.length,2);
+ assert.match(calls[0].payload.body_text,/^Dear Anshul,/);
+ assert.match(calls[1].payload.body_text,/^Dear Akshay,/);
+ assert.ok(calls.every(call=>!call.payload.body_text.includes('[Name]')&&!call.payload.body_html.includes('[Name]')));
+ assert.equal(ui.draft.value,saved);
+});
+
+test('other unfinished placeholders, together-mode Name tokens and unnamed recipients remain blocked before API calls',async()=>{
+ const previous=globalThis.CSS;globalThis.CSS={escape:value=>value};
+ try{
+ for(const options of [
+  {body:'Dear [Name],\n\nPlease review [Project].'},
+  {body:'Dear [Company],\n\nMay we discuss?'},
+  {body:'Dear [Name],\n\nMay we discuss?',subject:'Offer for [Company]'},
+  {body:'Dear [Name],\n\nMay we discuss?',mode:'together'},
+  {body:'Dear [Name],\n\nMay we discuss?',unnamed:true},
+  {body:'Dear [Name],\n\nMay we discuss?',placeholderName:true}
+ ]){
+  const ui=disposableUI({mode:options.mode});
+  const inputs=ui.app.root.querySelector('[data-pulse-card]').querySelectorAll('[data-pulse-recipient]:checked');
+  if(options.unnamed)inputs[1].dataset.name='';
+  if(options.placeholderName)inputs[1].dataset.name='[Contact]';
+  ui.draft.value=`Subject: ${options.subject||'Development partnership'}\n\n${options.body}`;
+  await ui.pulse.send({name:'Example'});
+  assert.equal(ui.calls.length,0,JSON.stringify(options));
+  assert.match(ui.status.textContent,/placeholder/);
+ }
+ }finally{if(previous===undefined)delete globalThis.CSS;else globalThis.CSS=previous;}
+});
+
+test('personal greeting resolution preserves explicit disposable confirmation and draft-change protection',async()=>{
+ const ui=disposableUI();ui.draft.value='Subject: Partnership\n\nDear [Name],\n\nMay we discuss?';
+ await ui.pulse.send({name:'Example'});
+ assert.equal(ui.section.hidden,false);assert.equal(ui.calls.length,1);
+ assert.ok(!ui.calls[0].body.includes('[Name]'));
+ ui.check(['sales@example.com']);ui.draft.value+='Changed';
+ await ui.pulse.sendDisposableAnyway();assert.equal(ui.calls.length,1);
+ assert.equal(ui.section.hidden,true);
 });

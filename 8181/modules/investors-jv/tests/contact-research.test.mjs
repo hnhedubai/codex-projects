@@ -88,12 +88,13 @@ test('all original contacts/emails survive; no duplicate names; enrichment idemp
 
 test('Balkan prospects have 24 sourced contacts without falsely claiming open external mandates',()=>{
  const ids=['alcazar-energy','fortis-energy','windey-energy','cwp-europe','rezolv-energy'];
- assert.equal(ids.flatMap(id=>partnerContacts[id]).length,24);
+ const cohort=id=>partnerContacts[id].filter(card=>partnerContactResearch[id].contacts.some(person=>person.name===card.name));
+ assert.equal(ids.flatMap(cohort).length,24);
  for(const id of ids){
   const record=partnerRecords.find(item=>item.id===id);
   assert.equal(record.status,'Potential fit — intent identified, availability unconfirmed');
   assert.equal(record.contactResearch.asOf,'2026-10-22');
-  for(const contact of partnerContacts[id]){
+  for(const contact of cohort(id)){
    assert.ok(contact.source);assert.ok(contact.corporateRoutes.length);
    for(const route of contact.emails)assert.ok(route.source);
   }

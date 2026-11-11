@@ -4,6 +4,8 @@ export const contactModules=Object.freeze({
  '/wind-projects':{directory:'wind-projects',snapshot:null},
  '/investors-jv':{directory:'investors-jv',snapshot:null},
  '/hydrogen-offtakers':{directory:'hydrogen-offtakers',snapshot:'contacts.source.json'},
+ '/h2-dev':{directory:'h2-dev',snapshot:null},
+ '/h2-projects':{directory:'h2-projects',snapshot:null},
  '/diesel-en590':{directory:'diesel-en590',snapshot:'en590-contacts.source.json'},
  '/e-saf':{directory:'e-saf',snapshot:'contacts.source.json'},
  '/ammonia':{directory:'ammonia',snapshot:'contacts.source.json'},
