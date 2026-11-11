@@ -19,6 +19,10 @@ data/*.bak
 # Generated enrichment runs (contain contact data / email lists - never commit)
 8181/outputs/
 
+# Ad-hoc research exports: verified contact CSVs, buyer workbooks, CVs
+/outputs/
+data/hydrogen-pulse-sends.json
+
 # Marketing media (~100 MB PNG/MP4), referenced by no source file; kept outside git
 brand-assets/
 
