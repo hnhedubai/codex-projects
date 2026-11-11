@@ -4,12 +4,18 @@
     "prepare": "git config core.hooksPath .githooks || true",
     "check:typography": "node scripts/audit-tokens.mjs --path apps/web/public --props font-size,font-weight --max 1",
     "db:migrate": "node apps/api/scripts/migrate.js",
-    "dev:tracker": "node apps/api/src/local-server.js",
-    "test": "node --test apps/api/test/*.test.js"
+    "db:verify": "node apps/api/scripts/verify-tracker-db.mjs",
+    "db:migrate:local": "node scripts/run-local-migration.mjs",
+    "build:web": "esbuild ./apps/web/src/app.js --bundle --format=esm --outfile=./apps/web/public/bundle.js && esbuild ./apps/web/src/auth-lifecycle.js --bundle --format=esm --outfile=./apps/web/public/auth/auth-lifecycle.js",
+    "dev:tracker": "npm run build:web && node scripts/run-local-tracker.mjs",
+    "start": "npm run build:web && node scripts/run-local-auth-lifecycle.mjs",
+    "test": "npm run build:web && node --test apps/api/test/*.test.js"
   },
   "dependencies": {
     "@neon/config": "^1.8.3",
     "@neon/env": "^1.5.0",
+    "@neondatabase/auth": "^0.5.0-beta",
+    "esbuild": "^0.25.9",
     "jose": "^6.1.3",
     "pg": "^8.16.3"
   }

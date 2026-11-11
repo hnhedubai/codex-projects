@@ -1,5 +1,20 @@
 .neon
 .env.local
 apps/api/.env
+apps/web/public/bundle.js
 node_modules/
 .codex-backups/
+data/hydrogen-offtaker-candidates.json
+
+# Secrets (defensive: .env.local and apps/api/.env are already covered above)
+.env
+
+# Runtime artifacts and scratch output
+*.log
+*.err.log
+tmp/
+data/*.bak
+*.inspect.ndjson
+
+# Generated enrichment runs (contain contact data / email lists - never commit)
+8181/outputs/

@@ -1,9 +1,24 @@
 #!/bin/sh
 # .githooks/pre-commit - typography gate
 command -v node >/dev/null 2>&1 || exit 0
-node scripts/audit-tokens.mjs --path apps/web/public --props font-size,font-weight --max 1 || {
+
+# Only enforce when this commit actually touches app CSS. The audit script takes
+# a directory, so it checks apps/web/public rather than the individual staged
+# files; that is fine as long as it only fires on commits that add CSS.
+staged_css=$(git diff --cached --name-only --diff-filter=ACMR -- 'apps/web/public/*.css')
+[ -z "$staged_css" ] && exit 0
+
+node scripts/audit-tokens.mjs --path apps/web/public --props font-size,font-weight --max 1
+status=$?
+
+# Exit 2 means no CSS was found at the path - nothing to enforce.
+if [ "$status" -eq 2 ]; then
+  exit 0
+fi
+
+if [ "$status" -ne 0 ]; then
   echo ""
   echo "Typography check failed: use a --text-* role token instead of a raw font-size."
   echo "Run: npm run check:typography"
   exit 1
-}
+fi
