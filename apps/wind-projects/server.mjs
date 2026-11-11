@@ -3,12 +3,13 @@ import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {randomBytes} from 'node:crypto';
-import {createContactStore} from './contact-store.mjs';
+import {createContactStore,defaultPartnerStoreFile} from './contact-store.mjs';
 import {projectRegistry} from './dist/data.js';
+import {partnerProjects,partnerRegistry} from './dist/partner-data.js';
 import {createReoon,loadReoonKey,normalizeEmail} from './reoon.mjs';
 import {createEnrichmentProviders} from './enrichment.mjs';
 import {loadPulseConfig,createPulseClient,validateSend,runSend} from './pulse.mjs';
-import {createSendStore} from './send-store.mjs';
+import {createSendStore,defaultPartnerSendFile} from './send-store.mjs';
 export const root = fileURLToPath(new URL('./dist/', import.meta.url));
 function resolveHunterDomain(projectId,contact,requested){
  const context=`${contact.name} ${contact.title||''} ${contact.role||''}`.toLowerCase();
@@ -16,8 +17,10 @@ function resolveHunterDomain(projectId,contact,requested){
  if((projectId==='hexham'||projectId==='barn-hill')&&context.includes('agl'))return'agl.com.au';
  return String(requested||'').trim().toLowerCase();
 }
-const files = new Map([['/wind-projects','index.html'],['/wind-projects/','index.html'],['/wind-projects/app.js','app.js'],['/wind-projects/styles.css','styles.css'],['/wind-projects/data.js','data.js'],['/wind-projects/contacts-ui.js','contacts-ui.js'],['/wind-projects/column-widths.js','column-widths.js'],['/wind-projects/format.mjs','format.mjs'],['/wind-projects/pulse-send-ui.js','pulse-send-ui.js']]);
-export function createServer({storePromise=createContactStore(),providerPromise=loadReoonKey().then(key=>createReoon(key)),enrichmentPromise=createEnrichmentProviders(),pulsePromise=loadPulseConfig().then(createPulseClient),sendStorePromise=createSendStore()}={}){
+const files = new Map([['/wind-projects','index.html'],['/wind-projects/','index.html'],['/wind-projects/app.js','app.js'],['/wind-projects/styles.css','styles.css'],['/wind-projects/data.js','data.js'],['/wind-projects/contacts-ui.js','contacts-ui.js'],['/wind-projects/column-widths.js','column-widths.js'],['/wind-projects/format.mjs','format.mjs'],['/wind-projects/pulse-send-ui.js','pulse-send-ui.js'],['/wind-projects/partner-data.js','partner-data.js']]);
+export function createServer({storePromise=createContactStore(),providerPromise=loadReoonKey().then(key=>createReoon(key)),enrichmentPromise=createEnrichmentProviders(),pulsePromise=loadPulseConfig().then(createPulseClient),sendStorePromise=createSendStore(),partnerStorePromise=createContactStore(defaultPartnerStoreFile,{items:partnerProjects,registry:partnerRegistry}),partnerSendStorePromise=createSendStore(defaultPartnerSendFile)}={}){
+ // A broken optional store must not crash the server before a request reaches it; the request itself reports the error.
+ partnerStorePromise.catch?.(()=>{});partnerSendStorePromise.catch?.(()=>{});
  const token=randomBytes(32).toString('hex');
  const pending=new Map();
  let sending=false;
@@ -28,22 +31,24 @@ export function createServer({storePromise=createContactStore(),providerPromise=
    const allowed=new Set([`localhost:${req.socket.localPort}`,`127.0.0.1:${req.socket.localPort}`]);
    if(!allowed.has(req.headers.host)|| (req.headers.origin&&!allowed.has(req.headers.origin.replace(/^http:\/\//,''))) )return json(403,{error:'Local same-origin requests only.'});
    try{
-    const store=await storePromise,provider=await providerPromise,enrichment=await enrichmentPromise,pulse=await pulsePromise,sendStore=await sendStorePromise;
-    if(pathname==='/wind-projects/api/health'&&req.method==='GET'){
+    const scoped=pathname.startsWith('/wind-projects/api/partners/');const route=scoped?pathname.replace('/wind-projects/api/partners/','/wind-projects/api/'):pathname;
+    const store=await(scoped?partnerStorePromise:storePromise),provider=await providerPromise,enrichment=await enrichmentPromise,pulse=await pulsePromise,sendStore=await(scoped?partnerSendStorePromise:sendStorePromise);
+    if(route==='/wind-projects/api/health'&&req.method==='GET'){
      const storeRegistry=store.snapshot().registry;
-     const aligned=storeRegistry.key===projectRegistry.key;
-     return json(aligned?200:503,{ok:aligned,registry:projectRegistry,storeRegistry,reason:aligned?'':'Project registry is stale. Restart the Wind Projects server.'});
+     const expected=scoped?partnerRegistry:projectRegistry;const aligned=storeRegistry.key===expected.key;
+     return json(aligned?200:503,{ok:aligned,registry:expected,storeRegistry,reason:aligned?'':'Project registry is stale. Restart the Wind Projects server.'});
     }
-    if(pathname==='/wind-projects/api/contacts'&&req.method==='GET')return json(200,{...store.snapshot(),token,reoonEnabled:provider.enabled,apolloEnabled:enrichment.apolloEnabled,hunterEnabled:enrichment.hunterEnabled,pulseEnabled:pulse.enabled});
-    if(pathname==='/wind-projects/api/sends'&&req.method==='GET'){const projectId=new URL(req.url,'http://localhost').searchParams.get('projectId')||'';store.contacts(projectId);return json(200,{sends:sendStore.list(projectId)});}
+    if(route==='/wind-projects/api/contacts'&&req.method==='GET')return json(200,{...store.snapshot(),token,reoonEnabled:provider.enabled,apolloEnabled:enrichment.apolloEnabled,hunterEnabled:enrichment.hunterEnabled,pulseEnabled:pulse.enabled});
+    if(route==='/wind-projects/api/sends/summary'&&req.method==='GET')return json(200,sendStore.summary());
+    if(route==='/wind-projects/api/sends'&&req.method==='GET'){const projectId=new URL(req.url,'http://localhost').searchParams.get('projectId')||'';store.contacts(projectId);return json(200,{sends:sendStore.list(projectId)});}
     if(req.method!=='POST')return json(405,{error:'Method not supported.'});
     if(req.headers['x-wind-token']!==token||!req.headers['content-type']?.startsWith('application/json'))return json(403,{error:'Refresh the workspace before making changes.'});
     let body='',size=0;for await(const chunk of req){size+=chunk.length;if(size>32768)return json(413,{error:'Request too large.'});body+=chunk;}
     let input;try{input=JSON.parse(body);}catch{return json(400,{error:'Invalid JSON.'});}
     if(!input||typeof input!=='object')return json(400,{error:'Invalid request.'});
-    if(pathname==='/wind-projects/api/contacts/save'){const contact=await store.save(input.projectId,input.contact);return json(200,{contact});}
-    if(pathname==='/wind-projects/api/contacts/delete'){const deleted=await store.remove(input.projectId,{id:input.contactId,version:input.version});return json(200,{deleted});}
-    if(pathname==='/wind-projects/api/contacts/verify'){
+    if(route==='/wind-projects/api/contacts/save'){const contact=await store.save(input.projectId,input.contact);return json(200,{contact});}
+    if(route==='/wind-projects/api/contacts/delete'){const deleted=await store.remove(input.projectId,{id:input.contactId,version:input.version});return json(200,{deleted});}
+    if(route==='/wind-projects/api/contacts/verify'){
      const contact=store.contacts(input.projectId).find(c=>c.id===input.contactId);
      const email=normalizeEmail(input.email);
      if(!contact||!contact.emails.includes(email))return json(422,{error:'Email must belong to a saved contact.'});
@@ -56,7 +61,7 @@ export function createServer({storePromise=createContactStore(),providerPromise=
      if(!pending.has(email))pending.set(email,(async()=>{const result=await provider.verify(email);await store.recordCheck(result);return result;})().finally(()=>pending.delete(email)));
      return json(200,{result:await pending.get(email),cached:false});
     }
-    if(pathname==='/wind-projects/api/send'){
+    if(route==='/wind-projects/api/send'){
      const send=validateSend(input,store.contacts(input.projectId));
      if(!pulse.enabled)return json(503,{error:'Pulse is not connected. Set PULSE_SEND_KEY and restart the server.'});
      if(sending)return json(409,{error:'Pulse send already in progress. Wait for it to finish.'});
@@ -67,7 +72,7 @@ export function createServer({storePromise=createContactStore(),providerPromise=
       return json(200,outcome);
      }finally{sending=false;}
     }
-    if(pathname==='/wind-projects/api/contacts/enrich'){
+    if(route==='/wind-projects/api/contacts/enrich'){
      const contact=store.contacts(input.projectId).find(c=>c.id===input.contactId);if(!contact)return json(422,{error:'Contact not found.'});
      const kind=input.provider,action=input.action||'enrich';let result;
      if(kind==='apollo')result=await enrichment.apollo(contact,{domain:String(input.domain||'').trim()});

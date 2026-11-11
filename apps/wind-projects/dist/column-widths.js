@@ -5,12 +5,12 @@ export function normalizeWidths(value, defaults) {
   return defaults.map((fallback, i) => typeof value?.[i] === 'number' && Number.isFinite(value[i])
     ? Math.round(Math.max(minimum, Math.min(maximum, value[i]))) : fallback);
 }
-export function enableColumnResize(table, toolbar, notify) {
+export function enableColumnResize(table, toolbar, notify, storageKeyOverride=storageKey) {
   if (!table || !toolbar) return;
   const headers = [...table.querySelectorAll('th')];
   const defaults = headers.map(th => Math.max(minimum, Math.round(th.getBoundingClientRect().width)));
   let widths = [...defaults];
-  try { widths = normalizeWidths(JSON.parse(localStorage.getItem(storageKey)), defaults); } catch {}
+  try { widths = normalizeWidths(JSON.parse(localStorage.getItem(storageKeyOverride)), defaults); } catch {}
   const group = document.createElement('colgroup');
   const columns = headers.map(() => group.appendChild(document.createElement('col')));
   table.prepend(group);
@@ -33,7 +33,7 @@ export function enableColumnResize(table, toolbar, notify) {
     columns.forEach((col, i) => { col.style.width = `${widths[i]}px`; handles[i]?.setAttribute('aria-valuenow', String(widths[i])); });
     table.style.width = `${widths.reduce((a, b) => a + b, 0)}px`;
   };
-  const save = () => { try { localStorage.setItem(storageKey, JSON.stringify(widths)); } catch { notify('Widths changed, but browser storage is unavailable.'); } };
+  const save = () => { try { localStorage.setItem(storageKeyOverride, JSON.stringify(widths)); } catch { notify('Widths changed, but browser storage is unavailable.'); } };
   headers.forEach((th, i) => {
     const handle = document.createElement('span');
     handle.className = 'column-resizer';

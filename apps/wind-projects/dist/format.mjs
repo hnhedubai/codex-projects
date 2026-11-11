@@ -56,6 +56,11 @@ export function parseDraft(text){
 export function greetingName(name){
  const parts=String(name||'').replace(/\([^)]*\)/g,' ').trim().split(/\s+/).filter(Boolean);
  if(!parts.length)return '';
+ const shared=/\b(team|desk|inbox|route|department|group|office|relations|investor access)\b/i.test(parts.join(' '));
+ if(shared){
+  const label=parts.filter(part=>!/^\b(team|desk|inbox|route|department|group|office|relations|investor|access)\b$/i.test(part));
+  return `${label.join(' ')||parts[0]} Investor Team`;
+ }
  const title=parts[0].match(/^(Dr|Mr|Mrs|Ms|Prof)\.?$/i);
  if(title&&parts.length>1){const t=title[1];return `${t[0].toUpperCase()}${t.slice(1).toLowerCase()}. ${parts[parts.length-1]}`;}
  return parts[0];

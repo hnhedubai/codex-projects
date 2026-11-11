@@ -39,3 +39,13 @@ Each project's Outreach tab has a **Send with Pulse** card listing that project'
 - Each email has an idempotency key, so re-clicking Send with the same draft and person does not send a duplicate. Edit the draft to send again.
 - A successful send sets the project's email status to "Email sent" and workflow to "Contacted" (forward only). History is saved in `private/sends.json`.
 - Sends count toward the DreamHost hourly mail quota.
+
+## Investors & JV Partners: contacts and Pulse sending
+
+Each partner's **Contacts** tab uses the same editable contact cards, Reoon checks and Apollo/Hunter buttons as projects, and each partner's **Outreach** tab has the same **Send with Pulse** card (one by one or one email, up to 10 recipients, send history, forward-only status update to "Email sent" / "Contacted").
+
+- Partner records and their published contact routes live in `dist/partner-data.js`, shared by the browser and the server. Partner IDs must stay different from project IDs (a test checks this).
+- Partner routes are `/wind-projects/api/partners/...` (contacts, verify, enrich, send, sends, health). They use their own stores: `private/partner-contacts.json` and `private/partner-sends.json`. Project data is untouched. Restart the server after updating so the new routes load.
+- Imported partner emails are generic company mailboxes (ir@, info@ ...). They are marked shared, start unticked and are not sent to unless you tick them. Add a named person's email on the contact card, let Reoon check it, and only Reoon-safe personal addresses start ticked.
+- Opening the partner page does not spend Reoon credits. Checks run when you add or change an email, or click **Reoon check** on a card (`autoVerifyOnLoad:false` in `dist/app.js`).
+- A send needs a "Subject: …" first line in the partner draft and no `[placeholder]` text. Pulse adds the signature.

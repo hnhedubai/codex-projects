@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {projects,projectRegistry} from './dist/data.js';
 import {isEmail,normalizeEmail} from './reoon.mjs';
 export const defaultStoreFile=new URL('./private/contacts.json',import.meta.url);
+export const defaultPartnerStoreFile=new URL('./private/partner-contacts.json',import.meta.url);
 const fields=['name','title','role','linkedin','source','notes','association'];
 export function sanitizeContact(input){
  if(!input||typeof input!=='object')throw Error('Contact details required.');
@@ -17,11 +18,11 @@ export function sanitizeContact(input){
  out.phones=[...new Set(input.phones.map(x=>x.trim()).filter(Boolean))];
  return out;
 }
-export async function createContactStore(file=defaultStoreFile){
+export async function createContactStore(file=defaultStoreFile,{items=projects,registry:registrySource=projectRegistry}={}){
  let state={schemaVersion:1,overrides:{},removed:{},checks:{},history:[],providerHistory:[],bulkTask:null};
  try{const parsed=JSON.parse(await readFile(file,'utf8'));if(parsed.schemaVersion!==1||!parsed.overrides||!parsed.checks||!Array.isArray(parsed.history))throw Error('Invalid contact store');state=parsed;if(!state.removed||typeof state.removed!=='object')state.removed={};if(!Array.isArray(state.providerHistory))state.providerHistory=[];}catch(e){if(e.code!=='ENOENT')throw Error('Contact store cannot be loaded safely. Restore it from backup; it has not been overwritten.');}
- const seeds=Object.fromEntries(projects.map(p=>[p.id,p.contacts.map((c,i)=>({...c,id:`${p.id}-${i}`,emails:c.email?[normalizeEmail(c.email)]:[],phones:Array.isArray(c.phones)?c.phones:[],association:/shared|company mailbox|project mailbox/i.test(c.status)?'shared':'unconfirmed',source:c.source||'',notes:'',version:1,original:structuredClone(c)}))]));
- const registry=structuredClone(projectRegistry);
+ const seeds=Object.fromEntries(items.map(p=>[p.id,p.contacts.map((c,i)=>({...c,id:`${p.id}-${i}`,emails:c.email?[normalizeEmail(c.email)]:[],phones:Array.isArray(c.phones)?c.phones:[],association:['personal','shared','unconfirmed'].includes(c.association)?c.association:/shared|company mailbox|project mailbox/i.test(c.status)?'shared':'unconfirmed',source:c.source||'',notes:'',version:1,original:structuredClone(c)}))]));
+ const registry=structuredClone(registrySource);
  let queue=Promise.resolve();
  const edit=fn=>{const job=queue.then(async()=>{const next=structuredClone(state);next.registry=registry;const result=fn(next);const dir=path.dirname(file instanceof URL? (await import('node:url')).fileURLToPath(file):file);await mkdir(dir,{recursive:true});const filename=file instanceof URL?(await import('node:url')).fileURLToPath(file):file;const temp=filename+'.tmp';await writeFile(temp,JSON.stringify(next,null,2));try{await copyFile(filename,filename+'.bak');}catch(e){if(e.code!=='ENOENT')throw e;}await rename(temp,filename);state=next;return result;});queue=job.catch(()=>{});return job;};
  const mergedContacts=(projectId,current=state)=>{
@@ -41,7 +42,7 @@ export async function createContactStore(file=defaultStoreFile){
   const contacts=projectId=>mergedContacts(projectId);
  return {
   contacts,
-  snapshot(){return {contacts:Object.fromEntries(projects.map(p=>[p.id,contacts(p.id)])),checks:structuredClone(state.checks),registry};},
+  snapshot(){return {contacts:Object.fromEntries(items.map(p=>[p.id,contacts(p.id)])),checks:structuredClone(state.checks),registry};},
   task:()=>structuredClone(state.bulkTask),
   setTask:task=>edit(next=>{next.bulkTask=task;}),
   check:email=>structuredClone(state.checks[normalizeEmail(email)]||null),
