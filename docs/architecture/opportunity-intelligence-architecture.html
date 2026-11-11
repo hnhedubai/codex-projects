@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><title>Opportunity Intelligence Platform Architecture</title>
+<style>html,body{margin:0;background:#f7f8fa;font-family:Arial,sans-serif}svg{display:block;margin:0 auto;background:#fff}</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1100" viewBox="0 0 1600 1100" role="img" aria-label="Opportunity Intelligence Platform architecture diagram">
+<defs>
+  <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#52606d"/></marker>
+  <style>
+    .title{font:700 34px Arial;fill:#17202a}.subtitle{font:16px Arial;fill:#52606d}.label{font:700 18px Arial;fill:#17202a}.body{font:14px Arial;fill:#52606d}.small{font:13px Arial;fill:#52606d}.layer{fill:#f4f7fb;stroke:#cbd5e1;stroke-width:2}.core{fill:#e8f0ff;stroke:#4472c4;stroke-width:2}.adapter{fill:#f6f2ff;stroke:#8064a2;stroke-width:2}.data{fill:#edf8f2;stroke:#4c956c;stroke-width:2}.approval{fill:#fff6e6;stroke:#c88a23;stroke-width:2}.arrow{stroke:#52606d;stroke-width:2.5;fill:none;marker-end:url(#arrow)}.dashed{stroke-dasharray:8 7}.pill{fill:#fff;stroke:#cbd5e1;stroke-width:1.5}.pilltext{font:600 13px Arial;fill:#263238}
+  </style>
+</defs>
+<text x="80" y="65" class="title">Opportunity Intelligence Platform</text>
+<text x="80" y="96" class="subtitle">Modular monolith · Intent → Opportunity → Evidence → Evaluation → Decision</text>
+
+<rect x="80" y="125" width="1440" height="110" rx="16" class="layer"/>
+<text x="110" y="158" class="label">Users and agents</text>
+<rect x="110" y="177" width="175" height="38" rx="19" class="pill"/><text x="197" y="201" text-anchor="middle" class="pilltext">Human researcher</text>
+<rect x="305" y="177" width="175" height="38" rx="19" class="pill"/><text x="392" y="201" text-anchor="middle" class="pilltext">Relationship manager</text>
+<rect x="500" y="177" width="150" height="38" rx="19" class="pill"/><text x="575" y="201" text-anchor="middle" class="pilltext">Approver</text>
+<rect x="670" y="177" width="150" height="38" rx="19" class="pill"/><text x="745" y="201" text-anchor="middle" class="pilltext">Research agents</text>
+<rect x="840" y="177" width="160" height="38" rx="19" class="pill"/><text x="920" y="201" text-anchor="middle" class="pilltext">JEV advisory</text>
+
+<path d="M800 235 L800 270" class="arrow"/>
+<rect x="80" y="270" width="1440" height="105" rx="16" class="layer"/>
+<text x="110" y="303" class="label">Web application shell</text>
+<rect x="110" y="321" width="170" height="38" rx="19" class="pill"/><text x="195" y="345" text-anchor="middle" class="pilltext">Identity</text>
+<rect x="300" y="321" width="170" height="38" rx="19" class="pill"/><text x="385" y="345" text-anchor="middle" class="pilltext">Dashboard</text>
+<rect x="490" y="321" width="170" height="38" rx="19" class="pill"/><text x="575" y="345" text-anchor="middle" class="pilltext">Intent workbench</text>
+<rect x="680" y="321" width="170" height="38" rx="19" class="pill"/><text x="765" y="345" text-anchor="middle" class="pilltext">Opportunity views</text>
+<rect x="870" y="321" width="170" height="38" rx="19" class="pill"/><text x="955" y="345" text-anchor="middle" class="pilltext">Evidence and gates</text>
+<rect x="1060" y="321" width="170" height="38" rx="19" class="pill"/><text x="1145" y="345" text-anchor="middle" class="pilltext">Agent runs</text>
+
+<path d="M800 375 L800 410" class="arrow"/>
+<rect x="80" y="410" width="1440" height="105" rx="16" class="layer"/>
+<text x="110" y="443" class="label">HTTP transport and request context</text>
+<rect x="110" y="461" width="225" height="38" rx="19" class="pill"/><text x="222" y="485" text-anchor="middle" class="pilltext">Authentication</text>
+<rect x="360" y="461" width="225" height="38" rx="19" class="pill"/><text x="472" y="485" text-anchor="middle" class="pilltext">Workspace authorization</text>
+<rect x="610" y="461" width="225" height="38" rx="19" class="pill"/><text x="722" y="485" text-anchor="middle" class="pilltext">Input validation</text>
+<rect x="860" y="461" width="225" height="38" rx="19" class="pill"/><text x="972" y="485" text-anchor="middle" class="pilltext">Errors and observability</text>
+
+<path d="M800 515 L800 550" class="arrow"/>
+<rect x="80" y="550" width="1440" height="210" rx="16" class="core"/>
+<text x="110" y="583" class="label">Application use cases and domain modules</text>
+<g>
+<rect x="110" y="606" width="210" height="58" rx="10" class="pill"/><text x="215" y="631" text-anchor="middle" class="label" font-size="16">Intent</text><text x="215" y="651" text-anchor="middle" class="small">goals and criteria</text>
+<rect x="345" y="606" width="210" height="58" rx="10" class="pill"/><text x="450" y="631" text-anchor="middle" class="label" font-size="16">Opportunity</text><text x="450" y="651" text-anchor="middle" class="small">land, buyer, investor</text>
+<rect x="580" y="606" width="210" height="58" rx="10" class="pill"/><text x="685" y="631" text-anchor="middle" class="label" font-size="16">Research</text><text x="685" y="651" text-anchor="middle" class="small">runs and results</text>
+<rect x="815" y="606" width="210" height="58" rx="10" class="pill"/><text x="920" y="631" text-anchor="middle" class="label" font-size="16">Evidence</text><text x="920" y="651" text-anchor="middle" class="small">sources and proof</text>
+<rect x="1050" y="606" width="210" height="58" rx="10" class="pill"/><text x="1155" y="631" text-anchor="middle" class="label" font-size="16">Evaluation</text><text x="1155" y="651" text-anchor="middle" class="small">scores and hard gates</text>
+<rect x="1285" y="606" width="210" height="58" rx="10" class="pill"/><text x="1390" y="631" text-anchor="middle" class="label" font-size="16">Agents / JEV</text><text x="1390" y="651" text-anchor="middle" class="small">proposals and review</text>
+</g>
+<text x="110" y="710" class="body">Each module owns its use cases, repository, routes, read model, UI feature, and tests.</text>
+<text x="110" y="735" class="body">Cross-module interaction uses IDs and small commands, never direct table access.</text>
+
+<path d="M800 760 L800 795" class="arrow"/>
+<rect x="80" y="795" width="1440" height="115" rx="16" class="adapter"/>
+<text x="110" y="828" class="label">Ports and adapters</text>
+<rect x="110" y="846" width="190" height="38" rx="19" class="pill"/><text x="205" y="870" text-anchor="middle" class="pilltext">Postgres adapter</text>
+<rect x="325" y="846" width="150" height="38" rx="19" class="pill"/><text x="400" y="870" text-anchor="middle" class="pilltext">Exa</text>
+<rect x="500" y="846" width="150" height="38" rx="19" class="pill"/><text x="575" y="870" text-anchor="middle" class="pilltext">Firecrawl</text>
+<rect x="675" y="846" width="150" height="38" rx="19" class="pill"/><text x="750" y="870" text-anchor="middle" class="pilltext">OpenAI</text>
+<rect x="850" y="846" width="150" height="38" rx="19" class="pill"/><text x="925" y="870" text-anchor="middle" class="pilltext">Reoon</text>
+<rect x="1025" y="846" width="190" height="38" rx="19" class="pill"/><text x="1120" y="870" text-anchor="middle" class="pilltext">Neon Auth</text>
+
+<path d="M800 910 L800 945" class="arrow"/>
+<rect x="80" y="945" width="1440" height="105" rx="16" class="data"/>
+<text x="110" y="978" class="label">Neon controlled data plane</text>
+<rect x="110" y="996" width="280" height="38" rx="19" class="pill"/><text x="250" y="1020" text-anchor="middle" class="pilltext">tracker.* write functions</text>
+<rect x="430" y="996" width="280" height="38" rx="19" class="pill"/><text x="570" y="1020" text-anchor="middle" class="pilltext">tracker_read.* views</text>
+<rect x="750" y="996" width="240" height="38" rx="19" class="pill"/><text x="870" y="1020" text-anchor="middle" class="pilltext">Evidence provenance</text>
+<rect x="1030" y="996" width="240" height="38" rx="19" class="pill"/><text x="1150" y="1020" text-anchor="middle" class="pilltext">Audit and cache</text>
+
+<rect x="1270" y="270" width="220" height="105" rx="12" class="approval"/>
+<text x="1380" y="304" text-anchor="middle" class="label">Approval queue</text>
+<text x="1380" y="329" text-anchor="middle" class="small">External communication</text>
+<text x="1380" y="348" text-anchor="middle" class="small">Applications and deletion</text>
+<path d="M1270 350 C1210 390 1210 425 1180 460" class="arrow dashed"/>
+</svg>
+</body>
+</html>

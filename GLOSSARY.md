@@ -41,6 +41,57 @@ or replaces a human Approver.
 A company, government department, operator, landowner, utility, carrier,
 advisor, or other stakeholder that can affect a land opportunity.
 
+## Company Type
+
+The ownership or legal category of an organisation, such as SOE, Private
+company, Public company, Government authority, Nonprofit, Joint venture,
+Subsidiary, or Unknown. Company Type is separate from Sector and Role.
+
+## Sector and Business Line
+
+The industry classification of an organisation. Sector is the broad category;
+sub-sector narrows it; Business Line describes the specific commercial
+activity. An organisation may have multiple classifications.
+
+## Company Role
+
+The part an organisation plays in a project, opportunity, or transaction, such
+as Buyer, Seller, Investor, Supplier, Operator, Authority, or Broker. A role
+is evidence-backed and may be scoped and reviewed independently of Company Type
+and Sector.
+
+## Purpose
+
+The intended business or project use captured by a research intent. It is
+project-specific and can describe land, infrastructure, energy, products,
+offtake, or another opportunity goal. Purpose is distinct from Company Type,
+Sector, and Company Role. The current UI retains the legacy `landUse` criteria
+key so existing saved intents remain compatible.
+
+## Establishment Year
+
+An evidence-backed company date fact stating the year in which an organisation
+was established or incorporated. It is nullable when the source does not state
+the year explicitly and must retain its source evidence and confidence.
+
+## Intent Company Candidate
+
+An existing company profile assessed for a particular research intent and
+candidate role. It is contextual opportunity state, not a duplicate company
+record and not proof that a transaction will occur.
+
+## Read Model
+
+A named `tracker_read` view or bounded read function assembled from normalized
+source tables for application display. A read model is not an additional source
+of truth.
+
+## Firecrawl Observation
+
+A source-backed fact or link extracted from a public official page by
+Firecrawl. It is an observation until reviewed; it is not automatic proof of
+authority, ownership, deliverability, or transaction readiness.
+
 ## Parcel
 
 A candidate physical land area assessed for a data-centre development. It has
