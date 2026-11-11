@@ -1,0 +1,37 @@
+name: Outreach Desk
+
+on:
+  push:
+    paths:
+      - 'outreach-desk/**'
+      - '.github/workflows/outreach-desk.yml'
+  pull_request:
+    paths:
+      - 'outreach-desk/**'
+      - '.github/workflows/outreach-desk.yml'
+
+# Single concurrent run per branch; cancels superseded in-progress runs.
+concurrency:
+  group: outreach-desk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: outreach-desk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # outreach-desk has no dependencies or lockfile (Node built-ins + node:sqlite),
+      # so there is nothing to install. verify = node --check (syntax) + node --test.
+      - name: Verify
+        run: npm run verify
