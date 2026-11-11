@@ -3,56 +3,53 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Oman Land Tracker</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <title>EN590 Buyer Desk</title>
+    <link rel="stylesheet" href="/tokens-typography.css"><link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main>
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">PRIVATE RESEARCH CRM</p>
-          <h1>Oman Land Tracker</h1>
-          <p class="subtitle">Find allocation-ready land and the people who can move the deal forward.</p>
-        </div>
-        <div class="environment"><span></span> Development branch</div>
-      </header>
+      <section class="workspace-shell" id="workspace">
+        <header class="topbar">
+          <div><p class="eyebrow">EN590 10PPM · BUYER RESEARCH</p><h1>EN590 Buyer Desk</h1><p class="subtitle">Review principal buyers, importers and distribution desks identified by the Exa research run.</p></div>
+          <div class="environment"><span></span> Research workspace</div>
+        </header>
 
-      <section class="metrics" aria-label="Portfolio metrics">
-        <article><p>Active projects</p><strong id="project-count">—</strong><small>Reusable country workspaces</small></article>
-        <article><p>Candidate parcels</p><strong id="parcel-count">—</strong><small>Only 10 MW+ IT-load candidates</small></article>
-        <article><p>Hard gates</p><strong>0</strong><small>Evidence checks are next</small></article>
-        <article><p>JEV votes</p><strong>0</strong><small>Advisory, never final approval</small></article>
-      </section>
+        <section class="metrics" aria-label="Buyer research metrics">
+          <article><p>Companies</p><strong id="company-count">0</strong><small>Accepted from Exa output</small></article>
+          <article><p>Contacts</p><strong id="contact-count">0</strong><small>Linked people and channels</small></article>
+          <article><p>Rejected</p><strong id="rejected-count">0</strong><small>Preserved exclusions</small></article>
+          <article><p>Market</p><strong id="market-label">—</strong><small>Current destination</small></article>
+        </section>
 
-      <nav aria-label="Tracker sections">
-        <a class="active" href="#workspace">Dashboard</a><a href="#parcels">Parcels</a><a href="#workspace">Projects</a>
-        <span>Requirements</span><span>Organisations</span><span>Contacts</span><span>Evidence</span><span>Research runs</span><span>Rejected</span>
-      </nav>
+        <section class="runbar" aria-label="Exa run controls">
+          <div><p class="eyebrow">IMPORT RUN OUTPUT</p><h2>Destination market</h2><p>Run the Exa agent separately, then send its <code>output.structured</code> object here.</p></div>
+          <div class="run-controls"><label class="sr-only" for="destination-market">Destination market</label><input id="destination-market" placeholder="e.g. Oman, UAE, India" /><button id="import-output" type="button">Import Exa output</button></div>
+        </section>
 
-      <section class="grid" id="workspace">
-        <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">START HERE</p><h2>Research projects</h2></div><button id="toggle-project">New project</button></div>
-          <form id="project-form" class="hidden">
-            <label>Project name<input name="name" required value="Oman data-centre land allocation" /></label>
-            <label>Country ISO 2<input name="countryIso2" required minlength="2" maxlength="2" value="OM" /></label>
-            <button type="submit">Create project</button>
-          </form>
-          <div id="projects" class="records" aria-live="polite"></div>
-        </article>
+        <nav class="buyer-tabs" aria-label="Buyer desk sections" role="tablist">
+          <button class="tab-button active" id="companies-tab" role="tab" aria-selected="true" aria-controls="companies-panel">Companies <span id="companies-tab-count">0</span></button>
+          <button class="tab-button" id="contacts-tab" role="tab" aria-selected="false" aria-controls="contacts-panel">Contacts <span id="contacts-tab-count">0</span></button>
+          <button class="tab-button" id="rejected-tab" role="tab" aria-selected="false" aria-controls="rejected-panel">Rejected <span id="rejected-tab-count">0</span></button>
+        </nav>
 
-        <article class="panel" id="parcels">
-          <div class="panel-heading"><div><p class="eyebrow">MINIMUM 10 MW IT LOAD</p><h2>Candidate parcels</h2></div><button id="toggle-parcel">Add parcel</button></div>
-          <form id="parcel-form" class="hidden">
-            <label>Research project<select name="researchProjectId" id="project-selector" required></select></label>
-            <label>Parcel name<input name="name" required placeholder="e.g. Barka industrial candidate" /></label>
-            <label>Target IT load (MW)<input name="targetItLoadMw" required type="number" min="10" step="0.1" value="10" /></label>
-            <button type="submit">Create parcel</button>
-          </form>
-          <div id="parcels-list" class="records" aria-live="polite"></div>
-        </article>
+        <section class="tab-panel" id="companies-panel" role="tabpanel" aria-labelledby="companies-tab">
+          <div class="panel-heading"><div><p class="eyebrow">QUALIFIED OUTPUT</p><h2>Companies</h2></div><div class="table-actions"><span class="table-hint">Only records returned in <code>companies[]</code> appear here.</span><details class="column-picker"><summary>Columns</summary><div class="column-options" data-column-options="companies"></div></details></div></div>
+          <div class="table-wrap"><table class="buyer-table" data-table="companies"><thead><tr><th data-column="company">Company</th><th data-column="type">Type</th><th data-column="country">Country</th><th data-column="batch">Batch</th><th data-column="notes">Evidence notes</th><th data-column="sources">Sources</th></tr></thead><tbody id="companies-body"></tbody></table></div>
+          <div class="empty-state" id="companies-empty"><strong>No companies imported yet.</strong><span>Paste the structured Exa output to populate this table.</span></div>
+        </section>
+        <section class="tab-panel hidden" id="contacts-panel" role="tabpanel" aria-labelledby="contacts-tab">
+          <div class="panel-heading"><div><p class="eyebrow">PUBLIC CONTACTS</p><h2>Contacts</h2></div><div class="table-actions"><span class="table-hint">Contact-role confidence is stated in the notes.</span><details class="column-picker"><summary>Columns</summary><div class="column-options" data-column-options="contacts"></div></details></div></div>
+          <div class="table-wrap"><table class="buyer-table" data-table="contacts"><thead><tr><th data-column="company">Company</th><th data-column="name">Name</th><th data-column="role">Role</th><th data-column="email">Email</th><th data-column="phone">Phone / channel</th><th data-column="country">Country</th><th data-column="notes">Verification note</th><th data-column="source">Source</th></tr></thead><tbody id="contacts-body"></tbody></table></div>
+          <div class="empty-state" id="contacts-empty"><strong>No contacts yet.</strong><span>Contacts can be linked to a company after buyer records are reviewed.</span></div>
+        </section>
+        <section class="tab-panel hidden" id="rejected-panel" role="tabpanel" aria-labelledby="rejected-tab">
+          <div class="panel-heading"><div><p class="eyebrow">PRESERVED EXCLUSIONS</p><h2>Rejected</h2></div><div class="table-actions"><span class="table-hint">Suppliers, wrong specifications, anonymous leads and unverified entities remain visible.</span><details class="column-picker"><summary>Columns</summary><div class="column-options" data-column-options="rejected"></div></details></div></div>
+          <div class="table-wrap"><table class="buyer-table" data-table="rejected"><thead><tr><th data-column="name">Name</th><th data-column="country">Country</th><th data-column="reason">Reason</th><th data-column="notes">Evidence / exclusion note</th><th data-column="source">Source</th></tr></thead><tbody id="rejected-body"></tbody></table></div>
+          <div class="empty-state" id="rejected-empty"><strong>No rejected records yet.</strong><span>Rejected companies will be preserved here with the reason and supporting evidence.</span></div>
+        </section>
       </section>
       <p id="notice" role="status"></p>
     </main>
-    <script type="module" src="/app.js"></script>
+    <script type="module" src="/bundle.js"></script>
   </body>
 </html>

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Source-backed industrial hydrogen offtaker research workspace">
+  <title>Hydrogen Offtaker Finder · Opportunity Desk</title>
+  <link rel="stylesheet" href="/hydrogen-offtaker.css">
+</head>
+<body>
+  <div class="shell hydrogen-shell">
+    <aside class="sidebar hydrogen-sidebar">
+      <a class="brand" href="#overview" data-view-link="overview"><span class="brand-symbol hydrogen-brand-symbol">H₂</span><span>HYDROGEN OFFTAKERS<small>Industrial opportunity desk</small></span></a>
+      <button id="overview-button" class="portfolio-button" data-view-link="search">▦ &nbsp; Portfolio overview <span id="sidebarCandidateCount">0</span></button>
+      <div class="side-label">COMPANY LIBRARY</div>
+      <label class="sr-only" for="hydrogenProjectSearch">Search companies</label><input id="hydrogenProjectSearch" type="search" placeholder="Search company or site…">
+      <div class="filter-row"><label class="sr-only" for="hydrogenCountryFilter">Country</label><select id="hydrogenCountryFilter"><option value="">All countries</option><option value="Poland">Poland</option><option value="Germany">Germany</option></select><label class="sr-only" for="hydrogenSignalFilter">Signal</label><select id="hydrogenSignalFilter"><option value="">All signals</option><option value="hydrogen_fuel_switch">Hydrogen fuel switch / process heat</option><option value="existing_hydrogen_use">Existing industrial hydrogen use</option><option value="hydrogen_trial">Hydrogen burner, furnace, or blending trial</option><option value="fossil_replacement">Fossil-fuel replacement with hydrogen</option><option value="ets_process_heat">EU ETS process heat plus hydrogen</option></select></div>
+      <nav id="hydrogenProjects" aria-label="Hydrogen candidates"></nav>
+      <footer class="sidebar-footer">
+        <span class="live-dot"></span> Standalone · local only
+        <small>Source-backed research workspace</small>
+      </footer>
+    </aside>
+    <main>
+      <header class="topbar">
+        <div class="topbar-context"><span>WORKSPACE <span class="slash">/</span> <span id="breadcrumb">Overview</span></span><small class="topbar-help">Zones with a representative point inside 250 km appear first. Borderline or zone-wide records still require exact GIS validation.</small></div>
+        <div class="topbar-filters"><button class="secondary topbar-export" id="exportZoneCsv" type="button">Export CSV</button><label class="topbar-filter"><select id="provider" aria-label="Provider"><option value="brave">Brave Search API</option><option value="serpapi">SerpApi / Google</option></select></label><label class="topbar-filter"><select id="language" aria-label="Language"><option value="en">English</option><option value="pl">Polski</option><option value="de">Deutsch</option></select></label></div>
+      </header>
+      <div class="hydrogen-content">
+        <header class="hydrogen-page-heading">
+          <div>
+          </div>
+        </header>
+        <section id="overview" class="view"></section>
+        <section id="candidates" class="view hidden"></section>
+        <section id="search" class="view hidden"></section>
+        <section id="review" class="view hidden"></section>
+        <section id="candidate-detail" class="view hidden"></section>
+        <div id="toast" role="status" aria-live="polite"></div>
+      </div>
+    </main>
+  </div>
+<script type="module" src="/hydrogen-offtaker.js?v=20261016-pulse1"></script>
+</body>
+</html>

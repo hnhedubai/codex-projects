@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Accounts · Oman Land Tracker</title>
+  <link rel="stylesheet" href="/tokens-typography.css"><link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/tracker/accounts.css">
+  <link rel="stylesheet" href="/tracker/portal-layout.css">
+</head>
+<body>
+  <main>
+    <section class="workspace-shell page-shell">
+      <header class="topbar">
+        <div><p class="eyebrow">CRM ACCOUNTS</p><h1>Accounts</h1><p class="subtitle">Companies and organisations from the PCompany master.</p></div>
+        <a href="/auth/account.html">Your account</a>
+      </header>
+      <nav class="left-nav" aria-label="Tracker sections">
+        <div class="left-nav-tools"><span class="left-nav-label">WORKSPACE</span><button id="toggle-sidebar" class="sidebar-toggle" type="button" aria-expanded="true" aria-controls="tracker-sidebar" title="Hide menu">‹</button></div>
+        <div id="tracker-sidebar"><a href="/tracker/dashboard.html">Dashboard</a><a href="/tracker/projects.html">Projects</a><a href="/tracker/accounts.html" class="active">Accounts</a><a href="/tracker/official-leads.html">Official leads</a><a href="/tracker/discovery.html">Discover land</a><a href="/tracker/contacts.html">Contacts</a><a href="/tracker/parcels.html">Parcels</a><a href="/tracker/research-runs.html">Research runs</a></div>
+        <div class="portal-view-controls" data-portal-view-controls aria-label="Account view"><button type="button" data-view="table" aria-label="Table view" title="Table view">▦</button><button type="button" data-view="kanban" aria-label="Kanban view" title="Kanban view">▤</button></div>
+        <button id="sidebar-resizer" class="sidebar-resizer" type="button" aria-label="Resize menu" title="Drag to resize menu"></button>
+      </nav>
+      <section class="panel page-content accounts-panel">
+        <div class="panel-heading">
+          <div><p class="eyebrow">P COMPANY MASTER</p><h2>Accounts</h2><span id="accounts-status" role="status" hidden>Loading accounts…</span></div>
+          <div class="accounts-toolbar"><label class="accounts-search">Search accounts<input id="accounts-search" type="search" maxlength="200" placeholder="Name or domain" autocomplete="off"></label></div>
+        </div>
+        <p id="accounts-notice" role="status" aria-live="polite"></p>
+        <div id="accounts-results" class="accounts-results" aria-live="polite"></div>
+      </section>
+    </section>
+  </main>
+  <script type="module" src="/tracker/accounts.js?v=20261008-accounts-parity-4"></script>
+</body>
+</html>

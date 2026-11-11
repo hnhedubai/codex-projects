@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Create account | Oman Land Tracker</title><link rel="stylesheet" href="/tokens-typography.css"><link rel="stylesheet" href="/auth/auth.css"></head>
+  <body>
+    <main class="auth-shell">
+      <div class="brand"><span class="brand-mark">OL</span> Oman Land Tracker</div>
+      <section class="card">
+        <p class="eyebrow">New account</p><h1>Create your account</h1>
+        <p class="intro">Use your work email. We will send a verification code before the account can be used.</p>
+        <form data-auth-form="register" novalidate>
+          <label>Full name<input name="name" autocomplete="name" required maxlength="100"></label>
+          <label>Email address<input name="email" type="email" autocomplete="email" required></label>
+          <label>Password<input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+          <p class="hint">Use at least 8 characters.</p>
+          <button type="submit">Create account</button>
+        </form>
+        <p class="status" role="status" aria-live="polite"></p>
+        <nav class="links"><a href="/auth/login.html">Already have an account? Sign in</a></nav>
+      </section>
+    </main><script type="module" src="/auth/auth-lifecycle.js"></script>
+  </body>
+</html>

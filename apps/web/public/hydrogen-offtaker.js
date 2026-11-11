@@ -1,0 +1,763 @@
+import { buildIndustrialZoneQueryTerm, zonesForCountry, zoneOptionLabel, zoneById } from './hydrogen-zones.js';
+import { hydrogenContactsFor, hydrogenLocalContacts, saveHydrogenContacts, hydrogenReoonSeeds, hydrogenCandidateResearch } from './hydrogen-contacts.js';
+import { formatBody, personalise, placeholderPattern, greetingName, parseDraft } from './hydrogen-pulse-format.js';
+
+let candidates = [];
+let searchResults = [];
+let searchHistory = [];
+let jevScreenings = [];
+let historyFilter = 'all';
+let selectedCandidateId = null;
+let selectedCandidateRecord = null;
+let hydrogenDetailTab = 'Overview';
+const hydrogenDetailTabs = ['Overview','Project & Status','Partnership','Financials','Due Diligence','Evidence','History','Contacts','Research & Sources','Outreach'];
+const HYDROGEN_COUNTRY_OPTIONS = [
+  { value: '', label: 'All countries' },
+  { value: 'PL', label: 'Poland' },
+  { value: 'DE', label: 'Germany' },
+];
+const HYDROGEN_SIGNAL_OPTIONS = [
+  { value: '', label: 'All signals' },
+  { value: 'hydrogen_fuel_switch', label: 'Hydrogen fuel switch / process heat' },
+  { value: 'existing_hydrogen_use', label: 'Existing industrial hydrogen use' },
+  { value: 'hydrogen_trial', label: 'Hydrogen burner, furnace, or blending trial' },
+  { value: 'fossil_replacement', label: 'Fossil-fuel replacement with hydrogen' },
+  { value: 'ets_process_heat', label: 'EU ETS process heat plus hydrogen' },
+];
+const $ = (selector) => document.querySelector(selector);
+const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[char]));
+const tier = (score) => score >= 70 ? 'Tier 1' : score >= 45 ? 'Tier 2' : 'Tier 3';
+const toast = (message) => { $('#toast').textContent = message; };
+const hydrogenChecksKey = 'hydrogen-offtaker:reoon-checks:v1';
+const hydrogenEmailChecks = () => { try { return { ...hydrogenReoonSeeds, ...(JSON.parse(localStorage.getItem(hydrogenChecksKey)) || {}) }; } catch { return hydrogenReoonSeeds; } };
+function hydrogenVerificationBadge(record) {
+  const contacts = candidateContacts(record);
+  const emails = contacts.flatMap((contact) => Array.isArray(contact.emails) ? contact.emails : contact.email ? [contact.email] : []);
+  const checks = hydrogenEmailChecks();
+  const safeCount = emails.filter((email) => checks[email.toLowerCase()]?.status === 'safe').length;
+  const checkedCount = emails.filter((email) => checks[email.toLowerCase()]).length;
+  if (safeCount) return `<span class="hydrogen-sidebar-verification safe" title="${safeCount} Reoon-safe email${safeCount === 1 ? '' : 's'}">${'✓'.repeat(Math.min(2, safeCount))}</span>`;
+  if (checkedCount) return '<span class="hydrogen-sidebar-verification unknown" title="Email checked by Reoon, but no safe mailbox result">✓</span>';
+  return '<span class="hydrogen-sidebar-verification none" title="No Reoon-safe email recorded">○</span>';
+}
+const uiStateKey = 'hydrogen-offtaker:ui-state:v1';
+const readUiState = () => { try { return JSON.parse(localStorage.getItem(uiStateKey)) || {}; } catch { return {}; } };
+const writeUiState = (patch) => { const current = readUiState(); localStorage.setItem(uiStateKey, JSON.stringify({ ...current, ...patch })); };
+const hydrogenSidebarOrderKey = 'hydrogen-offtaker:sidebar-order:v1';
+const hydrogenSidebarPriorityKey = 'hydrogen-offtaker:sidebar-priority:v1';
+const readSidebarList = (key) => { try { const value = JSON.parse(localStorage.getItem(key)); return Array.isArray(value) ? value.map(String) : []; } catch { return []; } };
+const writeSidebarList = (key, value) => localStorage.setItem(key, JSON.stringify([...new Set(value.map(String))]));
+const sidebarRecordKey = (record) => String(record.candidateId || `${record.company || ''}|${record.plantSiteName || ''}`).toLowerCase();
+function orderHydrogenSidebarRows(rows) {
+  const saved = readSidebarList(hydrogenSidebarOrderKey);
+  const priorities = new Set(readSidebarList(hydrogenSidebarPriorityKey));
+  const position = new Map(saved.map((key, index) => [key, index]));
+  return rows.slice().sort((a, b) => {
+    const aKey = sidebarRecordKey(a.record);
+    const bKey = sidebarRecordKey(b.record);
+    const aPriority = priorities.has(aKey) ? 0 : 1;
+    const bPriority = priorities.has(bKey) ? 0 : 1;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return (position.get(aKey) ?? Number.MAX_SAFE_INTEGER) - (position.get(bKey) ?? Number.MAX_SAFE_INTEGER);
+  });
+}
+function saveSearchUiState() { if (!$('#search')) return; writeUiState({ search: { provider: $('#provider')?.value, language: $('#language')?.value, country: $('#country')?.value, sector: $('#sector')?.value, signal: $('#hydrogenSignalFilter')?.value, industrialZone: $('#industrialZone')?.value, query: $('#query')?.value } }); }
+function pipelineZonesForCountry(country) { return country ? zonesForCountry(country) : [...zonesForCountry('PL'), ...zonesForCountry('DE')]; }
+function syncHydrogenSidebarCountry() { const select = $('#hydrogenCountryFilter'); const country = $('#country')?.value; if (!select || country == null) return; select.value = country === 'DE' ? 'Germany' : country === 'PL' ? 'Poland' : ''; }
+function setHydrogenSelectOptions(select, options) {
+  if (!select) return;
+  const current = select.value;
+  select.replaceChildren(...options.map(({ value, label }) => new Option(label, value)));
+  select.value = options.some((option) => option.value === current) ? current : '';
+}
+function syncHydrogenFilterOptions() {
+  setHydrogenSelectOptions($('#hydrogenCountryFilter'), HYDROGEN_COUNTRY_OPTIONS.map(({ value, label }) => ({ value: value === 'PL' ? 'Poland' : value === 'DE' ? 'Germany' : '', label })));
+  setHydrogenSelectOptions($('#hydrogenSignalFilter'), HYDROGEN_SIGNAL_OPTIONS);
+}
+function hydrogenSignalMatches(record, signal) {
+  if (!signal) return true;
+  const text = `${record.primaryClassification || ''} ${record.researchStatus || ''} ${record.company || ''} ${record.industry || record.sector || ''} ${record.status || ''} ${record.description || ''}`.toLowerCase();
+  const signalTerms = {
+    hydrogen_fuel_switch: [/\bfuel\b/, /hydrogen compatibility/, /hydrogen fit/, /industrial heat/, /process heat/],
+    existing_hydrogen_use: [/existing hydrogen/, /hydrogen feedstock/, /hydrogen use/, /hydrogen production/, /electrolysis/],
+    hydrogen_trial: [/trial/, /pilot/, /blend(?:ing)?/, /hydrogen[- ]ready/],
+    fossil_replacement: [/fossil/, /coal/, /lignite/, /natural gas/, /replacement/, /replace/],
+    ets_process_heat: [/\bets\b/, /process heat/, /steam/, /boiler/, /kiln/, /dryer/, /furnace/, /reheating/, /thermal/],
+  }[signal];
+  return Boolean(signalTerms?.some((term) => term.test(text)));
+}
+// --- Data hygiene: overlapping-zone de-duplication and consistent exclusion rules ---
+// Zones that cover the same physical site. Only company rows repeated across these are merged (Dow Olefinverbund etc. are different plants and stay).
+const OVERLAPPING_ZONE_GROUPS = [['stargard-high-technologies', 'stargard-industrial']];
+// Rows that can never be an external hydrogen offtaker.
+const JEV_EXCLUDE_STATUS = /exclude as an offtaker|do not count as (?:an )?external offtaker|infrastructure\/enabler|energy producer\/self-supply/i;
+const JEV_PLACEHOLDER_NAME = /\btenants\b/i;
+function jevExclusionReason(occupant) {
+  if (!occupant) return '';
+  if (JEV_EXCLUDE_STATUS.test(String(occupant.status || ''))) return 'self-supply or infrastructure, not an external offtaker';
+  if (JEV_PLACEHOLDER_NAME.test(String(occupant.company || ''))) return 'zone-level placeholder, no identifiable plant';
+  return '';
+}
+function dedupeOverlappingZoneRecords(records) {
+  const groupOf = new Map(); OVERLAPPING_ZONE_GROUPS.forEach((group, index) => group.forEach((id) => groupOf.set(id, index)));
+  const keyOf = ({ occupant, zone }) => groupOf.has(zone.id) ? `${groupOf.get(zone.id)}|${String(occupant.company || '').split(' / ')[0].toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()}` : null;
+  const rank = ({ occupant, zone }) => [rawLatestJev(zone.id, occupant.company)?.jevScore ?? -1, occupant.linkedinUrl ? 1 : 0, String(occupant.status || '').length];
+  const better = (a, b) => { const x = rank(a); const y = rank(b); for (let i = 0; i < x.length; i += 1) { if (x[i] !== y[i]) return x[i] > y[i]; } return false; };
+  const best = new Map();
+  records.forEach((record) => { const key = keyOf(record); if (key && (!best.has(key) || better(record, best.get(key)))) best.set(key, record); });
+  return records.filter((record) => { const key = keyOf(record); return !key || best.get(key) === record; });
+}
+function pipelineRecordsForCurrentFilters(includeSector = true) { const selectedZone = zoneById($('#industrialZone')?.value); let records = selectedZone ? (selectedZone.occupants || []).map((occupant) => ({ occupant, zone: selectedZone })) : pipelineZonesForCountry($('#country')?.value || '').flatMap((zone) => (zone.occupants || []).map((occupant) => ({ occupant, zone }))); if (!selectedZone) records = dedupeOverlappingZoneRecords(records); const sector = $('#sector')?.value || ''; const signal = $('#hydrogenSignalFilter')?.value || ''; if (includeSector && sector) records = records.filter(({ occupant, zone }) => hydrogenSectorForText(`${occupant.company} ${occupant.industry} ${zone.label}`) === sector); if (signal) records = records.filter(({ occupant, zone }) => hydrogenSignalMatches({ company: occupant.company, industry: occupant.industry, status: occupant.status, sector: occupant.industry, primaryClassification: '', researchStatus: '' }, signal)); return records; }
+function updateHydrogenPipelineCount() { const count = pipelineRecordsForCurrentFilters().length; if ($('#sidebarCandidateCount')) $('#sidebarCandidateCount').textContent = String(count); }
+
+function renderOverview() {
+  const sectors = {};
+  candidates.forEach((candidate) => { sectors[candidate.sector || 'Unspecified'] = (sectors[candidate.sector || 'Unspecified'] || 0) + 1; });
+  $('#overview').innerHTML = `
+    <div class="grid">${[['Saved candidates', candidates.length, 'Persisted local research records'], ['Tier 1', candidates.filter((c) => c.score >= 70).length, 'Priority screening'], ['Needs verification', candidates.filter((c) => c.researchStatus === 'needs_source_verification').length, 'Search evidence is not confirmation'], ['Strong fuel-switch', candidates.filter((c) => c.primaryClassification === 'Strong fuel-switch candidate').length, 'Requires source review']].map(([label, value, note]) => `<div class="card metric"><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`).join('')}</div>
+    <div class="split"><div class="panel"><h2>Saved candidates by sector</h2><div class="bars">${Object.entries(sectors).map(([name, count]) => `<div class="bar"><span>${esc(name)}</span><i style="width:${Math.max(8, count / Math.max(1, candidates.length) * 100)}%"></i><b>${count}</b></div>`).join('') || '<p class="muted">No candidates saved yet.</p>'}</div></div>
+    <div class="panel"><h2>Live provider comparison</h2><p>Brave and SerpApi results are normalized into one provenance shape. Search results remain unverified until reviewed.</p><div class="evidence"><b>Brave Search API</b><br>Server-side live adapter enabled.</div><div class="evidence"><b>SerpApi</b><br>Server-side Google adapter enabled.</div></div></div>
+    <div class="panel"><h2>Evidence guardrail</h2><p>Saving a result creates a reviewable candidate only. Search snippets are not confirmed demand, fuel use, hydrogen specification, or commercial intent.</p></div>`;
+}
+
+function renderHydrogenSidebar() {
+  const target = $('#hydrogenProjects');
+  if (!target) return;
+  try {
+  // Keep the sidebar badge correct even if a single sidebar record has malformed
+  // optional data. The pipeline count is the source of truth for this badge.
+  updateHydrogenPipelineCount();
+  syncHydrogenSidebarCountry();
+  const query = ($('#hydrogenProjectSearch')?.value || '').trim().toLowerCase();
+  const country = $('#hydrogenCountryFilter')?.value || '';
+  const signal = $('#hydrogenSignalFilter')?.value || '';
+  const zoneCompanies = pipelineRecordsForCurrentFilters().map(({ zone, occupant }) => ({ record: zoneRecord(zone, occupant), source: 'Search workspace' }));
+  const liveCompanies = searchResults.map((result, index) => ({ record: { ...result, candidateId: `search-${index}-${result.searchResultId || result.url}`, company: result.company || result.title, plantSiteName: result.plantSiteName || result.title, country: result.country || $('#country')?.value || 'PL', sector: result.sector || result.classification || 'Industrial site', primaryClassification: result.classification || 'Search result for review', researchStatus: 'needs_source_verification', evidence: result.evidence || [], sourceUrls: [result.url].filter(Boolean) }, source: 'Live search' }));
+  const allCompanies = [...candidates.map((record) => ({ record, source: 'Search workspace' })), ...zoneCompanies, ...liveCompanies];
+  const seen = new Set();
+  const rows = orderHydrogenSidebarRows(allCompanies.filter(({ record }) => { const key = `${record.company || ''}|${record.plantSiteName || ''}`.toLowerCase(); if (seen.has(key)) return false; seen.add(key); const text = `${record.company || ''} ${record.plantSiteName || ''} ${record.sector || ''} ${record.country || ''}`.toLowerCase(); return (!query || text.includes(query)) && (!country || String(record.country || '').toLowerCase() === country.toLowerCase()) && hydrogenSignalMatches(record, signal); }));
+  const priorities = new Set(readSidebarList(hydrogenSidebarPriorityKey));
+  target.innerHTML = rows.length ? rows.map(({ record, source }) => {
+    const key = sidebarRecordKey(record);
+    const prioritised = priorities.has(key);
+    let verification = '<span class="hydrogen-sidebar-verification none" title="No Reoon-safe email recorded">○</span>';
+    try { verification = hydrogenVerificationBadge(record); } catch (error) { console.warn('Hydrogen sidebar verification badge skipped', error); }
+    return `<div class="project-item hydrogen-project-item" draggable="true" data-hydrogen-row="${esc(key)}"><span class="project-drag-handle" aria-label="Drag to reorder" title="Drag to reorder">⠿</span><button type="button" class="project-link ${selectedCandidateId === record.candidateId ? 'active' : ''}" data-hydrogen-company="${esc(record.candidateId)}" ${selectedCandidateId === record.candidateId ? 'aria-current="page"' : ''}>${esc(record.company || record.plantSiteName || 'Unnamed company')}<small>${esc(record.country || 'Country not recorded')} · ${esc(record.sector || source)}</small></button>${verification}<button type="button" class="project-star ${prioritised ? 'prioritised' : ''}" data-hydrogen-star="${esc(key)}" aria-label="${prioritised ? 'Remove priority' : 'Prioritise company'}" title="${prioritised ? 'Remove priority' : 'Prioritise company'}">${prioritised ? '★' : '☆'}</button></div>`;
+  }).join('') : '<div class="empty">No companies match these filters.</div>';
+  target.querySelectorAll('[data-hydrogen-company]').forEach((button) => button.addEventListener('click', () => { const record = allCompanies.find(({ record }) => String(record.candidateId) === String(button.dataset.hydrogenCompany))?.record; if (record) openHydrogenRecord(record); }));
+  target.querySelectorAll('[data-hydrogen-star]').forEach((button) => button.addEventListener('click', (event) => { event.stopPropagation(); const next = new Set(readSidebarList(hydrogenSidebarPriorityKey)); const key = button.dataset.hydrogenStar; if (next.has(key)) next.delete(key); else next.add(key); writeSidebarList(hydrogenSidebarPriorityKey, [...next]); renderHydrogenSidebar(); }));
+  let draggedKey = '';
+  target.querySelectorAll('[data-hydrogen-row]').forEach((row) => { row.addEventListener('dragstart', (event) => { draggedKey = row.dataset.hydrogenRow; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', draggedKey); requestAnimationFrame(() => row.classList.add('dragging')); }); row.addEventListener('dragend', () => { draggedKey = ''; row.classList.remove('dragging'); target.querySelectorAll('[data-hydrogen-row]').forEach((item) => item.classList.remove('drag-before', 'drag-after')); }); row.addEventListener('dragover', (event) => { if (!draggedKey || draggedKey === row.dataset.hydrogenRow) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; const midpoint = row.getBoundingClientRect().top + row.offsetHeight / 2; row.classList.toggle('drag-before', event.clientY < midpoint); row.classList.toggle('drag-after', event.clientY >= midpoint); }); row.addEventListener('dragleave', (event) => { if (event.relatedTarget && row.contains(event.relatedTarget)) return; row.classList.remove('drag-before', 'drag-after'); }); row.addEventListener('drop', (event) => { event.preventDefault(); const from = event.dataTransfer.getData('text/plain') || draggedKey; const to = row.dataset.hydrogenRow; const insertAfter = row.classList.contains('drag-after'); row.classList.remove('drag-before', 'drag-after'); if (!from || !to || from === to) return; const current = [...target.querySelectorAll('[data-hydrogen-row]')].map((item) => item.dataset.hydrogenRow); const next = current.filter((key) => key !== from); let targetIndex = next.indexOf(to); if (targetIndex < 0) return; if (insertAfter) targetIndex += 1; next.splice(targetIndex, 0, from); const saved = readSidebarList(hydrogenSidebarOrderKey).filter((key) => !current.includes(key)); writeSidebarList(hydrogenSidebarOrderKey, [...next, ...saved]); renderHydrogenSidebar(); }); });
+  updateHydrogenPipelineCount();
+  } catch (error) {
+    console.error('Hydrogen sidebar render failed', error);
+    const fallback = pipelineZonesForCountry($('#country')?.value || '').flatMap((zone) => (zone.occupants || []).map((occupant) => ({ zone, occupant })));
+    target.innerHTML = fallback.length ? fallback.map(({ zone, occupant }) => { const record = zoneRecord(zone, occupant); return `<div class="project-item hydrogen-project-item"><span class="project-drag-handle">⠿</span><button type="button" class="project-link" data-hydrogen-company="${esc(record.candidateId)}">${esc(occupant.company)}<small>${esc(zone.country === 'PL' ? 'Poland' : 'Germany')} · ${esc(occupant.industry || 'Industrial site')}</small></button>${hydrogenVerificationBadge(record)}<button type="button" class="project-star">☆</button></div>`; }).join('') : '<div class="empty">No companies match these filters.</div>';
+    if ($('#sidebarCandidateCount')) $('#sidebarCandidateCount').textContent = String(fallback.length);
+  }
+}
+
+// Keep the library list on the same canonical pipeline dataset as the table.
+// This small renderer intentionally has no dependency on saved candidate rows,
+// verification metadata, or ordering state, so a malformed local record cannot
+// blank the navigation.
+function renderHydrogenSidebarStable() {
+  const target = $('#hydrogenProjects');
+  if (!target) return;
+  const country = $('#country')?.value || '';
+  const sector = $('#sector')?.value || '';
+  const signal = $('#hydrogenSignalFilter')?.value || '';
+  const query = ($('#hydrogenProjectSearch')?.value || '').trim().toLowerCase();
+  const rows = pipelineZonesForCountry(country).flatMap((zone) => (zone.occupants || []).map((occupant) => ({ zone, occupant }))).filter(({ zone, occupant }) => {
+    const text = `${occupant.company || ''} ${occupant.industry || ''} ${zone.label || ''}`;
+    return (!query || text.toLowerCase().includes(query))
+      && (!sector || hydrogenSectorForText(text) === sector)
+      && (!signal || hydrogenSignalMatches({ company: occupant.company, industry: occupant.industry, status: occupant.status }, signal));
+  });
+  target.innerHTML = rows.length ? rows.map(({ zone, occupant }) => {
+    const record = zoneRecord(zone, occupant);
+    return `<div class="project-item hydrogen-project-item"><span class="project-drag-handle" aria-hidden="true">⠿</span><button type="button" class="project-link" data-hydrogen-company="${esc(record.candidateId)}">${esc(occupant.company)}<small>${esc(zone.country === 'PL' ? 'Poland' : 'Germany')} · ${esc(occupant.industry || 'Industrial site')}</small></button>${hydrogenVerificationBadge(record)}<button type="button" class="project-star" aria-label="Prioritise company" title="Prioritise company">☆</button></div>`;
+  }).join('') : '<div class="empty">No companies match these filters.</div>';
+  target.querySelectorAll('[data-hydrogen-company]').forEach((button) => button.addEventListener('click', () => { const record = resolveHydrogenRecord(button.dataset.hydrogenCompany); if (record) openHydrogenRecord(record); }));
+  if ($('#sidebarCandidateCount')) $('#sidebarCandidateCount').textContent = String(rows.length);
+}
+
+// Use the stable renderer for all subsequent filter changes as well.
+renderHydrogenSidebar = renderHydrogenSidebarStable;
+
+function exportCsv(rows) {
+  const fields = ['candidateId','company','plantSiteName','country','sector','primaryClassification','jevVote','jevChoice','jevScore','score','confidence','researchStatus','signalDate','sourceUrls'];
+  return [fields.join(','), ...rows.map((candidate) => fields.map((field) => JSON.stringify(Array.isArray(candidate[field]) ? candidate[field].join(' | ') : candidate[field] ?? '')).join(','))].join('\n');
+}
+function download(name, body) { const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([body], { type: 'text/plain' })); link.download = name; link.click(); }
+function exportZoneCsv(records) { const fields = ['company', 'industry', 'zone', 'website', 'linkedin', 'screeningStatus', 'jevVote', 'jevChoice', 'jevScore', 'jevSummary']; return [fields.join(','), ...records.map(({ occupant, zone }) => { const jev = latestJev(zone.id, occupant.company) || {}; const row = { company: occupant.company, industry: occupant.industry, zone: zone.label, website: occupant.websiteUrl || '', linkedin: occupant.linkedinUrl || '', screeningStatus: occupant.status || '', jevVote: jev.jevVote || '', jevChoice: jev.jevChoice || '', jevScore: jev.jevScore ?? '', jevSummary: jev.jevSummary || '' }; return fields.map((field) => JSON.stringify(row[field] ?? '')).join(','); })].join('\n'); }
+
+function renderCandidatesLegacy() {
+  const rows = candidates.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+  $('#candidates').innerHTML = `
+    <div class="panel"><div class="toolbar"><label>Search<input id="filterText" placeholder="company, site, city"></label><label>Country<select id="filterCountry"><option value="">All</option><option>PL</option><option>DE</option></select></label><label>Status<select id="filterStatus"><option value="">All</option><option value="needs_source_verification">Needs source verification</option><option value="rejected">Rejected</option></select></label><button class="secondary" id="exportCsv">Export CSV</button><button class="secondary" id="exportJson">Export JSON</button></div>
+    <div class="table-wrap"><table><thead><tr><th>Company / site</th><th>Sector</th><th>Country</th><th>Classification</th><th>JEV Vote</th><th>JEV Choice</th><th>JEV Score</th><th>Score</th><th>Status</th><th>Sources</th></tr></thead><tbody id="candidateRows">${rows.map((candidate) => `<tr><td><b>${esc(candidate.company)}</b><br><span class="muted">${esc(candidate.plantSiteName)}</span></td><td>${esc(candidate.sector)}</td><td>${esc(candidate.country)}</td><td><span class="pill">${esc(candidate.primaryClassification)}</span></td><td><span class="pill ${candidate.jevVote === 'Reject' ? 'bad' : candidate.jevVote === 'Advance' ? '' : 'warn'}">${esc(candidate.jevVote || 'Not evaluated')}</span></td><td>${esc(candidate.jevChoice || 'Not evaluated')}</td><td>${candidate.jevScore == null ? '—' : `${candidate.jevScore}/100`}</td><td>${candidate.score}/100<br><span class="muted">${candidate.confidence} · ${tier(candidate.score)}</span></td><td><span class="pill warn">${esc(candidate.researchStatus)}</span></td><td><details><summary>Evidence</summary><div class="evidence">${(candidate.evidence || []).map((evidence) => `<p>${esc(evidence.summary)}<br><a href="${esc(evidence.sourceUrl)}" target="_blank" rel="noreferrer">${esc(evidence.sourceUrl)}</a><br><small>${esc(evidence.evidenceType)} · ${esc(evidence.verificationStatus)}</small></p>`).join('')}</div></details></td></tr>`).join('')}</tbody></table></div></div>`;
+  const applyFilters = () => { const text = ($('#filterText').value || '').toLowerCase(); const country = $('#filterCountry').value; const status = $('#filterStatus').value; [...document.querySelectorAll('#candidateRows tr')].forEach((row, index) => { const candidate = rows[index]; row.hidden = Boolean((text && !`${candidate.company} ${candidate.plantSiteName} ${candidate.city || ''}`.toLowerCase().includes(text)) || (country && candidate.country !== country) || (status && candidate.researchStatus !== status)); }); };
+  ['filterText','filterCountry','filterStatus'].forEach((id) => $('#' + id).addEventListener('input', applyFilters));
+  $('#exportCsv').onclick = () => download('hydrogen-offtakers.csv', exportCsv(rows));
+  $('#exportJson').onclick = () => download('hydrogen-offtakers.json', JSON.stringify(rows, null, 2));
+}
+
+const candidateTableKeys = {
+  visibility: 'hydrogen-offtaker:candidate-table:v1:visibility',
+  order: 'hydrogen-offtaker:candidate-table:v1:order',
+  widths: 'hydrogen-offtaker:candidate-table:v1:widths',
+};
+const candidateColumns = [
+  { key: 'company', label: 'Company / site', defaultVisible: true, defaultWidth: 220, minWidth: 160, maxWidth: 420, render: (c) => `<b>${esc(c.company)}</b><br><span class="muted">${esc(c.plantSiteName)}</span>` },
+  { key: 'sector', label: 'Sector', defaultVisible: true, defaultWidth: 150, minWidth: 110, maxWidth: 280, render: (c) => esc(c.sector) },
+  { key: 'country', label: 'Country', defaultVisible: true, defaultWidth: 90, minWidth: 70, maxWidth: 140, render: (c) => esc(c.country) },
+  { key: 'classification', label: 'Classification', defaultVisible: true, defaultWidth: 190, minWidth: 140, maxWidth: 320, render: (c) => `<span class="pill">${esc(c.primaryClassification)}</span>` },
+  { key: 'jevVote', label: 'JEV Vote', defaultVisible: true, defaultWidth: 115, minWidth: 95, maxWidth: 180, render: (c) => `<span class="pill ${c.jevVote === 'Reject' ? 'bad' : c.jevVote === 'Advance' ? '' : 'warn'}">${esc(c.jevVote || 'Not evaluated')}</span>` },
+  { key: 'jevChoice', label: 'JEV Choice', defaultVisible: true, defaultWidth: 150, minWidth: 110, maxWidth: 260, render: (c) => esc(c.jevChoice || 'Not evaluated') },
+  { key: 'jevScore', label: 'JEV Score', defaultVisible: true, defaultWidth: 105, minWidth: 90, maxWidth: 150, render: (c) => c.jevScore == null ? '—' : `${c.jevScore}/100` },
+  { key: 'score', label: 'Score', defaultVisible: true, defaultWidth: 105, minWidth: 90, maxWidth: 150, render: (c) => `${c.score}/100<br><span class="muted">${esc(c.confidence)} · ${tier(c.score)}</span>` },
+  { key: 'status', label: 'Status', defaultVisible: true, defaultWidth: 180, minWidth: 130, maxWidth: 280, render: (c) => `<span class="pill warn">${esc(c.researchStatus)}</span>` },
+  { key: 'sources', label: 'Sources', defaultVisible: true, defaultWidth: 300, minWidth: 180, maxWidth: 560, render: (c) => `<details><summary>Evidence</summary><div class="evidence">${(c.evidence || []).map((e) => `<p>${esc(e.summary)}<br><a href="${esc(e.sourceUrl)}" target="_blank" rel="noreferrer">${esc(e.sourceUrl)}</a><br><small>${esc(e.evidenceType)} · ${esc(e.verificationStatus)}</small></p>`).join('')}</div></details>` },
+  { key: 'open', label: 'Review', defaultVisible: true, defaultWidth: 105, minWidth: 92, maxWidth: 140, render: (c) => `<button type="button" class="secondary open-candidate" data-open-candidate="${esc(c.candidateId)}">Open ↗</button>` },
+];
+const readTableSetting = (key, fallback) => { try { const value = JSON.parse(localStorage.getItem(key)); return value ?? fallback; } catch { return fallback; } };
+const writeTableSetting = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+function getCandidateTableConfig() {
+  const validKeys = new Set(candidateColumns.map((column) => column.key));
+  const savedVisibility = readTableSetting(candidateTableKeys.visibility, {});
+  const visibility = Object.fromEntries(candidateColumns.map((column) => [column.key, savedVisibility[column.key] === false ? false : column.defaultVisible]));
+  if (!Object.values(visibility).some(Boolean)) visibility.company = true;
+  const savedOrder = readTableSetting(candidateTableKeys.order, []);
+  const order = [...new Set(Array.isArray(savedOrder) ? savedOrder.filter((key) => validKeys.has(key)) : [])];
+  candidateColumns.forEach((column) => { if (!order.includes(column.key)) order.push(column.key); });
+  const savedWidths = readTableSetting(candidateTableKeys.widths, {});
+  const widths = Object.fromEntries(candidateColumns.map((column) => { const value = Number(savedWidths[column.key]); return [column.key, Number.isFinite(value) ? Math.min(column.maxWidth, Math.max(column.minWidth, value)) : column.defaultWidth]; }));
+  return { visibility, order, widths };
+}
+
+function candidateDetailDraft(candidate) {
+  const key = `hydrogen-offtaker:outreach-draft:${candidate.candidateId}`;
+  try { return JSON.parse(localStorage.getItem(key)) || {}; } catch { return {}; }
+}
+
+const hydrogenOfftakeDefaultSubject = 'Confidential Hydrogen Offtake Opportunity';
+const hydrogenOfftakeDefaultBody = `Dear [Name],
+
+I represent an upcoming renewable-powered green-hydrogen project in Europe, with output of up to 3,000 tonnes per year, delivered by trailer now and by pipeline later.
+
+The hydrogen is RFNBO-certified, meeting Delegated Regulations (EU) 2023/1184 and 2023/1185. Early-bird offtakers can reserve volumes on preferential terms, helping [Company] secure compliant green hydrogen and advance toward net zero. Volumes are limited and being allocated now, before the next development stage.
+
+Could you forward this to your hydrogen, trading, procurement or decarbonisation leads? I propose a mutual NDA, then a short call this month on a non-binding offtake agreement.
+
+Best Regards,
+`;
+
+function renderHydrogenContacts(candidate, contacts) {
+  const section = $('#candidate-contacts');
+  if (!section) return;
+  const checksKey = 'hydrogen-offtaker:reoon-checks:v1';
+  const readChecks = () => { try { return { ...hydrogenReoonSeeds, ...(JSON.parse(localStorage.getItem(checksKey)) || {}) }; } catch { return hydrogenReoonSeeds; } };
+  const verifyEmail = async (email, force = false) => { const normalized = String(email || '').trim().toLowerCase(); if (!normalized) return false; const checks = readChecks(); const previous = checks[normalized]; const retryable = previous?.status === 'unknown' && /unavailable|not connected|network|failed/i.test(String(previous?.error || '')); if (!force && previous && !retryable) return false; try { const response = await fetch('/api/hydrogen/verify-email', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: normalized }) }); const payload = await response.json(); checks[normalized] = payload.result || { status: 'unknown', error: payload.error || `Verification failed (${response.status})` }; } catch { checks[normalized] = { status: 'unknown', error: 'Verification unavailable' }; } localStorage.setItem(checksKey, JSON.stringify(checks)); return true; };
+  const emailLine = (contact, email) => { const result = readChecks()[email.toLowerCase()]; const state = result?.status === 'safe' ? 'safe' : result?.status === 'invalid' ? 'invalid' : result ? 'unknown' : 'uncertain'; const mark = state === 'invalid' ? '×' : state === 'uncertain' ? '○' : '✓'; const title = result ? `Reoon: ${result.status}${result.cached ? ' (cached)' : ''}` : 'Not checked by Reoon'; return `<div class="email-line"><span class="email-value">${esc(email)}</span><button class="copy-email" type="button" data-hydrogen-copy-email="${esc(email)}" title="Copy email address" aria-label="Copy ${esc(email)}">⧉</button><button class="verification-icon ${state}" type="button" data-hydrogen-verify-email="${esc(email)}" title="${esc(title)}" aria-label="${esc(email)}: ${esc(title)}">${mark}</button></div>`; };
+  const cards = contacts.map((contact) => { const name = contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || 'Named contact'; const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase(); const emails = Array.isArray(contact.emails) ? contact.emails : contact.email ? [contact.email] : []; return `<article class="card"><div class="avatar">${esc(initials)}</div><h3>${esc(name)}</h3><p class="contact-role">${esc(contact.designation || contact.title || 'Designation not supplied')}</p><p>${esc(contact.role || 'Decision-making role not confirmed')}</p><div class="contact-emails">${emails.map((email) => emailLine(contact, email)).join('') || '<p class="muted">No email added</p>'}</div><p class="muted contact-association">Person-email association not independently confirmed; Reoon checks mailbox deliverability only.</p>${contact.phone || (Array.isArray(contact.phones) && contact.phones.length) ? `<div class="contact-link">Phone: ${esc(contact.phone || contact.phones.join(' · '))}</div>` : '<p class="muted">Phone not recorded</p>'}<div class="contact-link">${contact.linkedinUrl ? `<a href="${esc(contact.linkedinUrl)}" target="_blank" rel="noreferrer">LinkedIn profile ↗</a>` : 'LinkedIn not recorded'}</div><div class="contact-link">${contact.sourceUrl ? `<a href="${esc(contact.sourceUrl)}" target="_blank" rel="noreferrer">Contact source ↗</a>` : 'Contact source not recorded'}</div><div class="contact-actions"><button type="button" data-hydrogen-edit-contact="${esc(contact.id || name)}">Edit contact</button><button type="button" class="primary" data-hydrogen-verify-contact="${esc(contact.id || name)}" ${emails.length ? '' : 'disabled'}>Reoon check</button><button type="button" disabled title="Apollo is not connected to this Hydrogen record">Apollo enrich</button><button type="button" disabled title="Hunter is not connected to this Hydrogen record">Hunter find email</button>${contact.manual ? `<button type="button" data-hydrogen-remove-contact="${esc(contact.id)}">Remove</button>` : ''}</div></article>`; }).join('') || '<div class="card"><p>No contacts yet. Add a contact to get started.</p></div>';
+  section.innerHTML = `<div class="contact-toolbar"><div><h2>Project contacts</h2><p class="muted">Reoon runs automatically for new emails. Apollo and Hunter run only when requested.</p></div><button class="primary" type="button" id="hydrogenAddContact">+ Add contact</button></div><div class="notice">Contact edits and provider history are saved locally. A safe mailbox is not proof of a person-email match.</div><form id="hydrogenAddContactForm" class="hydrogen-add-contact" hidden><h3>Add contact</h3><div class="form-row"><label>Name<input name="name" required maxlength="120" autocomplete="off"></label><label>Role / designation<input name="designation" maxlength="120" autocomplete="off"></label><label>Email<input name="email" type="email" maxlength="200" autocomplete="off"></label></div><div class="contact-actions"><button class="primary" type="submit">Save contact</button><button type="button" data-cancel>Cancel</button></div><p class="muted">Saved in this browser only. Reoon checks the address automatically.</p></form><div class="contact-grid">${cards}</div>`;
+  const refreshManualContacts = () => { candidate.contacts = [...candidateContacts(candidate).filter((item) => !item.manual), ...hydrogenLocalContacts(candidate.company).filter((item) => item.manual)]; renderHydrogenContacts(candidate, candidate.contacts); document.dispatchEvent(new CustomEvent('hydrogen-pulse-refresh')); };
+  const addForm = section.querySelector('#hydrogenAddContactForm');
+  section.querySelector('#hydrogenAddContact').onclick = () => { addForm.hidden = !addForm.hidden; if (!addForm.hidden) addForm.querySelector('input[name=name]').focus(); };
+  addForm.querySelector('[data-cancel]').onclick = () => { addForm.hidden = true; addForm.reset(); };
+  addForm.onsubmit = (event) => { event.preventDefault(); const data = new FormData(addForm); const name = String(data.get('name') || '').trim(); const email = String(data.get('email') || '').trim().toLowerCase(); if (!name) { toast('Enter a name.'); return; } if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('Enter a valid email address.'); return; } saveHydrogenContacts(candidate.company, [...hydrogenLocalContacts(candidate.company), { id: `manual-${Date.now()}`, name, designation: String(data.get('designation') || '').trim(), emails: email ? [email] : [], manual: true }]); refreshManualContacts(); };
+  section.querySelectorAll('[data-hydrogen-remove-contact]').forEach((button) => button.addEventListener('click', () => { saveHydrogenContacts(candidate.company, hydrogenLocalContacts(candidate.company).filter((item) => item.id !== button.dataset.hydrogenRemoveContact)); refreshManualContacts(); }));
+  section.querySelectorAll('[data-hydrogen-copy-email]').forEach((button) => button.addEventListener('click', async () => { try { await navigator.clipboard.writeText(button.dataset.hydrogenCopyEmail); button.textContent = '✓'; button.classList.add('copied'); setTimeout(() => { button.textContent = '⧉'; button.classList.remove('copied'); }, 1200); } catch { /* clipboard permission is optional */ } }));
+  section.querySelectorAll('[data-hydrogen-verify-contact]').forEach((button) => button.addEventListener('click', async () => { const contact = contacts.find((item) => String(item.id || item.name) === button.dataset.hydrogenVerifyContact); const emails = Array.isArray(contact?.emails) ? contact.emails : contact?.email ? [contact.email] : []; button.disabled = true; for (const email of emails) await verifyEmail(email, true); renderHydrogenContacts(candidate, contacts); document.dispatchEvent(new CustomEvent('hydrogen-pulse-refresh')); }));
+  const newEmails = [...new Set(contacts.flatMap((contact) => Array.isArray(contact.emails) ? contact.emails : contact.email ? [contact.email] : []).map((email) => String(email || '').trim().toLowerCase()).filter(Boolean))].filter((email) => !readChecks()[email]);
+  if (newEmails.length) void (async () => { for (const email of newEmails) await verifyEmail(email); renderHydrogenContacts(candidate, contacts); document.dispatchEvent(new CustomEvent('hydrogen-pulse-refresh')); })();
+}
+
+// --- Send with Pulse (Outreach tab) — same flow as apps/wind-projects, server key never reaches the browser ---
+const HYDROGEN_PULSE_MAX = 10;
+const hydrogenPulseChecksKey = 'hydrogen-offtaker:reoon-checks:v1';
+const hydrogenStageOrder = ['Not contacted', 'Contacted', 'In discussion', 'Due diligence', 'Passed'];
+const hydrogenEmailOrder = ['', 'sent', 'responded'];
+const pulseStates = new Map();
+let pulseRefresh = null;
+document.addEventListener('hydrogen-pulse-refresh', () => pulseRefresh?.());
+function readHydrogenChecks() { try { return { ...hydrogenReoonSeeds, ...(JSON.parse(localStorage.getItem(hydrogenPulseChecksKey)) || {}) }; } catch { return hydrogenReoonSeeds; } }
+const pulseIsCatchAll = (check) => check?.status === 'catch_all' || check?.raw?.is_catch_all === true;
+function pulseReoonLabel(check) {
+  if (!check) return ['○', 'Not checked', 'uncertain'];
+  if (pulseIsCatchAll(check)) return ['≈', 'Catch-all — Pulse blocks; not sendable here', 'uncertain'];
+  if (check.status === 'safe' && check.deliverable) return ['✓', 'Reoon safe', 'positive'];
+  if (check.status === 'role_account') return ['◎', 'Role / shared inbox', 'uncertain'];
+  if (check.status === 'invalid') return ['×', 'Invalid', 'negative'];
+  return ['?', `Reoon ${check.status}`, 'uncertain'];
+}
+function pulseReason(result) {
+  const v = result.verification;
+  const detail = v == null ? '' : typeof v === 'string' ? v : v.reason || v.message || JSON.stringify(v);
+  return detail ? `${result.error} (${String(detail).slice(0, 200)})` : result.error;
+}
+const pulseResultLabel = (r) => r.status === 'sent' ? `<span class="pulse-result sent">✓ Sent${r.replay ? ' (already sent earlier)' : ''}</span>` : r.status === 'blocked' ? `<span class="pulse-result blocked">✕ Blocked — ${esc(pulseReason(r))}</span>` : `<span class="pulse-result failed">! ${esc(r.error)}</span>`;
+
+function renderHydrogenPulseCard(candidate, workflowKey) {
+  const section = $('#candidate-outreach');
+  if (!section) return;
+  const id = candidate.candidateId;
+  if (!pulseStates.has(id)) pulseStates.set(id, { mode: 'separate', picks: {}, results: {}, sends: null, enabled: null, error: '', loading: false, busy: false });
+  const st = pulseStates.get(id);
+  if (st.error) { st.sends = null; st.error = ''; st.enabled = null; }
+  const rows = () => candidateContacts(candidate).flatMap((c) => (Array.isArray(c.emails) ? c.emails : c.email ? [c.email] : []).map((email) => ({ c, email: String(email).trim().toLowerCase() })).filter((row) => row.email));
+  const draft = () => parseDraft($('#candidateOutreachDraft')?.value || '');
+  function defaults() {
+    const checks = readHydrogenChecks(); let first = !Object.values(st.picks).some((p) => p.field === 'to');
+    for (const { c, email } of rows()) if (!st.picks[email]) { const check = checks[email]; const checked = check?.status === 'safe' && check.deliverable === true && !pulseIsCatchAll(check); st.picks[email] = { name: c.name || '', checked, field: checked && first ? 'to' : 'cc' }; if (checked) first = false; }
+  }
+  const selected = () => { const checks = readHydrogenChecks(); return rows().filter(({ email }) => st.picks[email]?.checked && !pulseIsCatchAll(checks[email])).map(({ c, email }) => ({ name: c.name || '', email, field: st.mode === 'separate' ? 'to' : st.picks[email].field })); };
+  const resolveCompany = (body) => String(body || '').replace(/\[Company\]/gi, candidate.company || 'your company');
+  const resolveTogetherBody = (body) => resolveCompany(body).replace(/^Dear\s+\[Name\],/im, 'Dear Hydrogen Team,');
+  function problem() {
+    const { subject, body } = draft(); const picked = selected();
+    if (st.error) return st.error;
+    if (st.enabled === null) return 'Checking the send service…';
+    if (st.enabled === false) return 'Pulse not connected — set PULSE_SEND_KEY and restart the server.';
+    if (!subject) return 'Start the draft with a "Subject: …" line.';
+    if (!body) return 'The draft has no message body.';
+    const sendableBody = st.mode === 'together' ? resolveTogetherBody(body) : resolveCompany(body);
+    // One by one: [Name] is filled in for each person, so it is not an unfinished placeholder in that mode.
+    const unfinished = (text) => (st.mode === 'separate' ? String(text).replace(/\[\s*name\s*\]/gi, '') : String(text)).match(placeholderPattern)?.[0] || '';
+    const leftover = unfinished(subject) || unfinished(sendableBody);
+    if (leftover) return `Remove ${leftover} from the draft — only [Name] and [Company] are filled in automatically. Pulse adds your signature.`;
+    if (!picked.length) return 'Tick at least one recipient.';
+    if (picked.length > HYDROGEN_PULSE_MAX) return `Up to ${HYDROGEN_PULSE_MAX} recipients per send.`;
+    if (st.mode === 'together' && !picked.some((r) => r.field === 'to')) return 'Set at least one recipient to To.';
+    return '';
+  }
+  function preview() { const { subject, body } = draft(); const first = selected()[0]; const text = st.mode === 'separate' && first ? personalise(resolveCompany(body).replace(/\[\s*name\s*\]/gi, greetingName(first.name) || 'colleague'), first.name) : resolveTogetherBody(body); return `<div class="pulse-preview"><p class="muted">Preview${st.mode === 'separate' && first ? ` for ${esc(first.name || first.email)}` : ''} · Pulse adds your signature below.</p><p class="pulse-preview-subject"><strong>Subject:</strong> ${esc(subject || '—')}</p><div class="pulse-preview-body">${formatBody(text).html}</div></div>`; }
+  function history() {
+    if (!st.sends) return st.loading ? '<p class="muted">Loading sent history…</p>' : '';
+    if (!st.sends.length) return '<p class="muted">No emails sent from this record yet.</p>';
+    return `<ul class="pulse-history">${st.sends.map((s) => `<li><small>${esc(new Date(s.at).toLocaleString('en-GB', { timeZone: 'Asia/Dubai' }))} (Dubai) · ${s.mode === 'separate' ? 'one by one' : 'one email'}</small> ${esc(s.subject)} — ${s.summary.sent} sent${s.summary.blocked ? `, ${s.summary.blocked} blocked` : ''}${s.summary.failed ? `, ${s.summary.failed} failed` : ''}<br><span class="muted">${esc((s.recipients || []).map((r) => r.email).join(', '))}</span></li>`).join('')}</ul>`;
+  }
+  async function loadHistory() {
+    if (st.loading) return; st.loading = true;
+    try {
+      const response = await fetch(`/api/hydrogen/sends?candidateId=${encodeURIComponent(id)}`, { headers: { 'x-hydrogen-send': '1' } });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || typeof payload.enabled !== 'boolean') throw new Error('unavailable');
+      st.sends = payload.sends || []; st.enabled = payload.enabled; st.error = '';
+    } catch { st.sends = []; st.enabled = null; st.error = 'The send service is not running — restart the hydrogen server (it was updated), then reopen this tab.'; }
+    finally { st.loading = false; refresh(); }
+  }
+  function card() {
+    defaults(); if (st.sends === null && !st.loading) queueMicrotask(loadHistory);
+    const checks = readHydrogenChecks(); const list = rows(); const why = problem(); const count = selected().length;
+    const label = st.busy ? 'Sending… (Pulse may take ~15 s to wake)' : st.mode === 'separate' ? `Send ${count} email${count === 1 ? '' : 's'}` : `Send 1 email to ${count} ${count === 1 ? 'person' : 'people'}`;
+    return `<section class="card hydrogen-pulse-send" id="hydrogen-pulse-send"><h2>Send with Pulse</h2><p class="muted">Sends this draft from your GrynH2 Pulse mailbox. Pulse checks every recipient and adds your signature; sent mail appears in Pulse Sent. Nothing is sent until you click Send.</p>
+<div class="pulse-mode" role="radiogroup" aria-label="Send mode"><label><input type="radio" name="hydrogen-pulse-mode" value="separate" ${st.mode === 'separate' ? 'checked' : ''}> One by one (personal greeting)</label><label><input type="radio" name="hydrogen-pulse-mode" value="together" ${st.mode === 'together' ? 'checked' : ''}> One email (To / CC / BCC)</label></div>
+${list.length ? `<table class="pulse-recipients"><tbody>${list.map(({ c, email }) => { const pick = st.picks[email]; const [sym, text, cls] = pulseReoonLabel(checks[email]); const result = st.results[email]; return `<tr><td><input type="checkbox" data-pulse-pick="${esc(email)}" aria-label="Send to ${esc(email)}" ${pulseIsCatchAll(checks[email]) ? 'disabled title="Catch-all domain — Pulse blocks it"' : pick.checked ? 'checked' : ''}></td><td><strong>${esc(c.name || 'Contact')}</strong><br><small class="muted">${esc(c.designation || c.title || '')}</small></td><td>${esc(email)}<br><span class="pulse-reoon ${cls}">${sym} ${esc(text)}</span></td><td>${st.mode === 'together' ? `<select data-pulse-field="${esc(email)}" aria-label="Field for ${esc(email)}">${['to', 'cc', 'bcc'].map((f) => `<option value="${f}" ${pick.field === f ? 'selected' : ''}>${f.toUpperCase()}</option>`).join('')}</select>` : ''}${result ? pulseResultLabel(result) : ''}</td></tr>`; }).join('')}</tbody></table>` : '<p class="muted">No contact emails yet. Add a contact on the Contacts tab first.</p>'}
+<p><button type="button" class="primary" id="hydrogen-pulse-send-button" ${why || st.busy ? 'disabled' : ''}>${esc(label)}</button></p>${why && !st.busy ? `<p class="muted pulse-why">${esc(why)}</p>` : ''}
+${preview()}<h3>Sent history</h3>${history()}</section>`;
+  }
+  function refresh() { const el = $('#hydrogen-pulse-send'); if (el) el.outerHTML = card(); }
+  async function send() {
+    if (st.busy || problem()) return;
+    const { subject, body } = draft(); const recipients = selected(); const sendBody = st.mode === 'together' ? resolveTogetherBody(body) : resolveCompany(body);
+    st.busy = true; for (const r of recipients) delete st.results[r.email]; refresh();
+    try {
+      const response = await fetch('/api/hydrogen/send', { method: 'POST', headers: { 'content-type': 'application/json', 'x-hydrogen-send': '1' }, body: JSON.stringify({ candidateId: id, mode: st.mode, subject, body: sendBody, recipients }) });
+      const out = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(out.error || `Pulse send failed (HTTP ${response.status}).`);
+      for (const r of out.results) for (const email of r.emails) st.results[email] = r;
+      const { sent, blocked, failed } = out.summary;
+      toast(`${[`${sent} sent`, blocked && `${blocked} blocked`, failed && `${failed} failed`].filter(Boolean).join(', ')}.`);
+      if (out.workflowUpdate) {
+        let saved = {}; try { saved = JSON.parse(localStorage.getItem(workflowKey)) || {}; } catch { saved = {}; }
+        const stage = hydrogenStageOrder.indexOf(saved.workflow || 'Not contacted') < hydrogenStageOrder.indexOf(out.workflowUpdate.workflow) ? out.workflowUpdate.workflow : (saved.workflow || 'Not contacted');
+        const mail = hydrogenEmailOrder.indexOf(saved.emailStatus || '') < hydrogenEmailOrder.indexOf(out.workflowUpdate.emailStatus) ? out.workflowUpdate.emailStatus : (saved.emailStatus || '');
+        localStorage.setItem(workflowKey, JSON.stringify({ ...saved, workflow: stage, emailStatus: mail, savedAt: new Date().toISOString() }));
+        if ($('#hydrogenWorkflow')) $('#hydrogenWorkflow').value = stage; if ($('#hydrogenEmailStatus')) $('#hydrogenEmailStatus').value = mail;
+      }
+      st.sends = null;
+    } catch (error) { toast(error.message); }
+    finally { st.busy = false; refresh(); }
+  }
+  section.insertAdjacentHTML('beforeend', card());
+  pulseRefresh = refresh;
+  section.addEventListener('change', (event) => {
+    if (st.busy) return;
+    if (event.target.matches('[data-pulse-pick]')) { st.picks[event.target.dataset.pulsePick].checked = event.target.checked; refresh(); }
+    else if (event.target.matches('[data-pulse-field]')) { st.picks[event.target.dataset.pulseField].field = event.target.value; refresh(); }
+    else if (event.target.matches('[name="hydrogen-pulse-mode"]')) { st.mode = event.target.value; refresh(); }
+  });
+  section.addEventListener('input', (event) => { if (!st.busy && event.target.id === 'candidateOutreachDraft') refresh(); });
+  section.addEventListener('click', (event) => { if (event.target.closest('#hydrogen-pulse-send-button')) send(); });
+}
+
+function candidateContacts(candidate) {
+  return Array.isArray(candidate.contacts) ? candidate.contacts : Array.isArray(candidate.contactPeople) ? candidate.contactPeople : [];
+}
+
+function renderHydrogenOutreach(candidate, draft, workflowKey, workflow) {
+  const section = $('#candidate-outreach');
+  if (!section) return;
+  const company = candidate.company || candidate.plantSiteName || 'your company';
+  const defaultBody = hydrogenOfftakeDefaultBody.replace(/\[Company\]/gi, company).replace(/\[Name\]/gi, 'Project Team');
+  const draftText = `Subject: ${draft.subject || hydrogenOfftakeDefaultSubject}\n\n${draft.body || defaultBody}`;
+  section.innerHTML = `<div class="hydrogen-outreach-layout"><section class="card hydrogen-outreach-draft"><h2>Draft an introductory enquiry</h2><p class="muted">Editable draft for this opportunity. Start with a "Subject: …" line; Pulse adds your signature. Emails go out only when you click Send with Pulse below.</p><label class="sr-only" for="candidateOutreachDraft">Email draft</label><textarea id="candidateOutreachDraft" aria-label="Email draft">${esc(draftText)}</textarea><div class="hydrogen-detail-actions"><button type="button" class="primary" id="saveCandidateDraft">Save draft</button><button type="button" class="secondary" id="copyCandidateDraft">Copy draft</button></div><p id="candidateDraftStatus" class="muted"></p></section><section class="card hydrogen-outreach-workflow"><h2>Your relationship workflow</h2><div class="form-row"><label>Stage<select id="hydrogenWorkflow"><option ${workflow.workflow === 'Not contacted' || !workflow.workflow ? 'selected' : ''}>Not contacted</option><option ${workflow.workflow === 'Contacted' ? 'selected' : ''}>Contacted</option><option ${workflow.workflow === 'In discussion' ? 'selected' : ''}>In discussion</option><option ${workflow.workflow === 'Due diligence' ? 'selected' : ''}>Due diligence</option><option ${workflow.workflow === 'Passed' ? 'selected' : ''}>Passed</option></select></label><label>Follow-up date<input type="date" id="hydrogenFollowup" value="${esc(workflow.followup || '')}"></label></div><label>Email status<select id="hydrogenEmailStatus"><option value="" ${!workflow.emailStatus ? 'selected' : ''}>Not sent</option><option value="sent" ${workflow.emailStatus === 'sent' ? 'selected' : ''}>Email sent</option><option value="responded" ${workflow.emailStatus === 'responded' ? 'selected' : ''}>Response received</option></select></label><p class="outreach-status-help"><span class="email-status-dot sent"></span> Email sent &nbsp; <span class="email-status-dot responded"></span> Response received</p><label for="hydrogenOutreachNotes">Conversation notes</label><textarea id="hydrogenOutreachNotes" placeholder="Log your actual correspondence and next actions…">${esc(workflow.outreachNotes || '')}</textarea><p><button type="button" class="primary" id="saveHydrogenWorkflow">Save workflow</button></p><p class="muted">Dates and outreach status are reminders in this workspace. Emails go out only when you click Send with Pulse.</p></section></div>`;
+  $('#saveCandidateDraft').onclick = () => { const parsed = parseDraft($('#candidateOutreachDraft').value); localStorage.setItem(`hydrogen-offtaker:outreach-draft:${candidate.candidateId}`, JSON.stringify({ subject: parsed.subject, body: parsed.body, savedAt: new Date().toISOString() })); $('#candidateDraftStatus').textContent = 'Draft saved locally. Nothing has been sent yet.'; };
+  $('#copyCandidateDraft').onclick = async () => { await navigator.clipboard.writeText($('#candidateOutreachDraft').value); $('#candidateDraftStatus').textContent = 'Draft copied. Nothing has been sent yet.'; };
+  $('#saveHydrogenWorkflow').onclick = () => { localStorage.setItem(workflowKey, JSON.stringify({ workflow: $('#hydrogenWorkflow').value, followup: $('#hydrogenFollowup').value, emailStatus: $('#hydrogenEmailStatus').value, outreachNotes: $('#hydrogenOutreachNotes').value, savedAt: new Date().toISOString() })); toast('Workflow saved locally.'); };
+  renderHydrogenPulseCard(candidate, workflowKey);
+}
+
+function openHydrogenRecord(record) { selectedCandidateRecord = record; selectedCandidateId = record.candidateId || `record-${Date.now()}`; hydrogenDetailTab = 'Overview'; writeUiState({ selectedCandidateId, activeView: 'candidate-detail' }); history.pushState(null, '', `#candidate/${encodeURIComponent(selectedCandidateId)}/Overview`); renderCandidateDetail(); setHydrogenView('candidate-detail', { historyMode: 'none' }); }
+function zoneRecord(zone, occupant) { const key = String(occupant.company || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); const enrichment = hydrogenCandidateResearch[key] || {}; return { candidateId: `zone-${zone.id}-${occupant.company}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'), company: occupant.company, plantSiteName: zone.label, country: zone.country === 'PL' ? 'Poland' : 'Germany', sector: occupant.industry, primaryClassification: 'Industrial site for review', researchStatus: occupant.status || 'needs_source_verification', score: null, confidence: 'Unverified', website: occupant.websiteUrl, evidence: occupant.linkEvidenceUrl ? [{ evidenceType: 'Zone source', summary: occupant.linkEvidenceStatus || 'Zone occupant source', sourceUrl: occupant.linkEvidenceUrl, verificationStatus: 'Needs review' }] : [], sourceUrls: [occupant.websiteUrl, occupant.linkedinUrl].filter(Boolean), contacts: hydrogenContactsFor(occupant.company), ...enrichment }; }
+
+function renderCandidateDetail() {
+  const candidate = candidates.find((item) => item.candidateId === selectedCandidateId) || selectedCandidateRecord;
+  if (!candidate) { $('#candidate-detail').innerHTML = '<div class="empty">Candidate not found. Return to the candidate list.</div>'; return; }
+  const contacts = candidateContacts(candidate);
+  const draft = candidateDetailDraft(candidate);
+  const workflowKey = `hydrogen-offtaker:workflow:${candidate.candidateId}`;
+  let workflow = {};
+  try { workflow = JSON.parse(localStorage.getItem(workflowKey)) || {}; } catch { workflow = {}; }
+  const contactMarkup = contacts.length ? contacts.map((contact) => `<article class="hydrogen-contact-card"><div class="hydrogen-avatar">${esc(`${contact.firstName || contact.name || '?'} `.trim().split(/\s+/).map((part) => part[0]).slice(0,2).join('').toUpperCase())}</div><div><h3>${esc(contact.name || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || 'Named contact')}</h3><p class="muted">${esc(contact.designation || contact.role || 'Decision-maker contact')}</p>${contact.email ? `<a class="contact-link" href="mailto:${esc(contact.email)}">${esc(contact.email)}</a>` : '<span class="muted">Email not recorded</span>'}${contact.linkedinUrl ? `<a class="contact-link" href="${esc(contact.linkedinUrl)}" target="_blank" rel="noreferrer">LinkedIn profile ↗</a>` : ''}${contact.phone ? `<div class="muted">${esc(contact.phone)}</div>` : ''}</div></article>`).join('') : '<div class="notice">No named decision-maker is attached to this candidate yet. Use the company and source links below to complete contact research before outreach.</div>';
+  const evidenceMarkup = (candidate.evidence || []).map((evidence) => `<article class="hydrogen-evidence-entry"><strong>${esc(evidence.evidenceType || 'Source evidence')}</strong><p>${esc(evidence.summary || 'No summary recorded.')}</p>${evidence.sourceUrl ? `<a href="${esc(evidence.sourceUrl)}" target="_blank" rel="noreferrer">Open source ↗</a>` : ''}<small>${esc(evidence.verificationStatus || 'Verification status not recorded')}</small></article>`).join('') || '<p class="muted">No evidence records have been saved for this candidate.</p>';
+  const company = candidate.company || candidate.plantSiteName || 'your company';
+  const defaultBody = hydrogenOfftakeDefaultBody.replace(/\[Company\]/gi, company).replace(/\[Name\]/gi, 'Project Team');
+  const draftText = `Subject: ${draft.subject || hydrogenOfftakeDefaultSubject}\n\n${draft.body || defaultBody}`;
+  const detailTabs = [['Overview','candidate-overview'],['Project & Status','candidate-status'],['Partnership','candidate-partnership'],['Financials','candidate-financials'],['Due Diligence','candidate-diligence'],['Evidence','candidate-evidence'],['History','candidate-history'],['Contacts','candidate-contacts'],['Research & Sources','candidate-research'],['Outreach','candidate-outreach']];
+  const facts = `<div class="hydrogen-fact-grid"><div><small>Company / site</small><strong>${esc(candidate.company || 'Not recorded')}</strong></div><div><small>Country</small><strong>${esc(candidate.country || 'Not recorded')}</strong></div><div><small>Sector</small><strong>${esc(candidate.sector || 'Not recorded')}</strong></div><div><small>Primary classification</small><strong>${esc(candidate.primaryClassification || 'Not recorded')}</strong></div><div><small>Research score</small><strong>${candidate.score == null ? '—' : `${candidate.score}/100`}</strong></div><div><small>JEV assessment</small><strong>${esc(candidate.jevVote || 'Not evaluated')} ${candidate.jevScore == null ? '' : `· ${candidate.jevScore}/100`}</strong></div></div>`;
+  const activeDetailId = detailTabs.find(([label]) => label === hydrogenDetailTab)?.[1] || 'candidate-overview';
+  $('#candidate-detail').innerHTML = `<div class="hydrogen-detail-toolbar"><button type="button" class="secondary" id="backToCandidates">← Candidates</button><span class="muted">Workspace / ${esc(candidate.company || candidate.plantSiteName || 'Candidate')}</span></div><div class="hydrogen-detail-heading"><div><p class="eyebrow">${esc(candidate.country || 'COUNTRY NOT RECORDED')} / HYDROGEN OPPORTUNITY</p><h1><button type="button" class="detail-star" aria-label="Prioritise candidate">☆</button>${esc(candidate.company || candidate.plantSiteName || 'Unnamed candidate')}</h1><p class="intro">${esc(candidate.company || 'Project owner not recorded')} &nbsp; / &nbsp; ${esc(candidate.plantSiteName || 'Industrial site')} &nbsp; / &nbsp; ${esc(candidate.sector || 'Sector not recorded')}</p><div class="hydrogen-detail-status"><span class="pill">${esc(candidate.primaryClassification || 'Unclassified')}</span><span class="pill warn">${esc(candidate.researchStatus || 'Review required')}</span><span class="muted">Research imported · live verification pending</span></div></div><div class="hydrogen-detail-actions"><button type="button" class="secondary" id="exportCandidate">Export candidate</button></div></div><nav class="hydrogen-detail-tabs" aria-label="Candidate detail sections">${detailTabs.map(([label, id]) => `<a href="#${id}" data-detail-tab="${esc(label)}" class="${id === activeDetailId ? 'active' : ''}">${label}</a>`).join('')}</nav><div class="hydrogen-detail-grid"><div><section id="candidate-overview" class="panel hydrogen-detail-card ${activeDetailId === 'candidate-overview' ? 'detail-tab-active' : ''}"><h2>Investment snapshot</h2>${facts}<p class="muted">${esc(candidate.description || candidate.snippet || 'No additional site description is recorded.')}</p></section><section id="candidate-status" class="panel hydrogen-detail-card ${activeDetailId === 'candidate-status' ? 'detail-tab-active' : ''}"><h2>Project &amp; Status</h2><div class="hydrogen-fact-grid"><div><small>Development status</small><strong>${esc(candidate.researchStatus || 'Requires verification')}</strong></div><div><small>Evidence level</small><strong>Imported reference · not revalidated</strong></div><div><small>Commercial demand</small><strong>Not confirmed</strong></div><div><small>Last research update</small><strong>${esc(candidate.signalDate || candidate.searchedAt || 'Not recorded')}</strong></div></div></section><section id="candidate-partnership" class="panel hydrogen-detail-card ${activeDetailId === 'candidate-partnership' ? 'detail-tab-active' : ''}"><h2>Partnership</h2><p>${esc(candidate.primaryClassification || 'Potential industrial hydrogen opportunity')} requires direct confirmation of ownership, demand, procurement route and decision authority.</p><p class="muted">No commercial intent is inferred from research signals alone.</p></section><section id="candidate-financials" class="panel hydrogen-detail-card ${activeDetailId === 'candidate-financials' ? 'detail-tab-active' : ''}"><h2>Financials</h2><p class="muted">Capital requirements, investment structure and procurement budget have not been independently confirmed.</p></section><section id="candidate-diligence" class="panel hydrogen-detail-card ${activeDetailId === 'candidate-diligence' ? 'detail-tab-active' : ''}"><h2>Due Diligence</h2><div class="check-row"><input type="checkbox" disabled><span>Confirm company and site identity<small>Evidence required before commercial classification.</small></span></div><div class="check-row"><input type="checkbox" disabled><span>Confirm hydrogen demand and technical specification<small>Do not treat search results as confirmation.</small></span></div><div class="check-row"><input type="checkbox" disabled><span>Confirm decision-maker authority<small>Validate contact role and person-email association.</small></span></div></section><section id="candidate-evidence" class="panel hydrogen-detail-card ${activeDetailId === 'candidate-evidence' ? 'detail-tab-active' : ''}"><div class="section-head"><h2>Evidence</h2><small>Review before treating demand as confirmed</small></div><div class="hydrogen-evidence-list">${evidenceMarkup}</div>${(candidate.sourceUrls || []).length ? `<div class="source-list">${candidate.sourceUrls.map((url) => `<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(url)}</a>`).join('')}</div>` : ''}</section><section id="candidate-history" class="panel hydrogen-detail-card ${activeDetailId === 'candidate-history' ? 'detail-tab-active' : ''}"><h2>History</h2><p class="muted">Research and screening events for this candidate will appear here as they are recorded.</p></section><section id="candidate-research" class="panel hydrogen-detail-card ${activeDetailId === 'candidate-research' ? 'detail-tab-active' : ''}"><h2>Research &amp; Sources</h2><p>${esc(candidate.summary || candidate.snippet || 'Structured research record for this candidate.')}</p></section></div><aside><section id="candidate-contacts" class="panel hydrogen-detail-card ${activeDetailId === 'candidate-contacts' ? 'detail-tab-active' : ''}"><div class="section-head"><h2>Project contacts</h2><small>${contacts.length} recorded</small></div><p class="muted">Contact research and verification remain separate from commercial confirmation.</p><div class="hydrogen-contact-grid">${contactMarkup}</div>${candidate.website ? `<a class="contact-link" href="${esc(candidate.website)}" target="_blank" rel="noreferrer">Company website ↗</a>` : ''}</section><section id="candidate-outreach" class="panel hydrogen-detail-card hydrogen-outreach-card ${activeDetailId === 'candidate-outreach' ? 'detail-tab-active' : ''}"><h2>Outreach</h2><p class="muted">Editable draft for this opportunity. Start with a "Subject: …" line; Pulse adds your signature. Emails go out only when you click Send with Pulse below.</p><label class="sr-only" for="candidateOutreachDraft">Email draft</label><textarea id="candidateOutreachDraft" aria-label="Email draft">${esc(draftText)}</textarea><div class="hydrogen-detail-actions"><button type="button" class="primary" id="saveCandidateDraft">Save draft</button><button type="button" class="secondary" id="copyCandidateDraft">Copy draft</button></div><p id="candidateDraftStatus" class="muted"></p></section></aside></div>`;
+  renderHydrogenContacts(candidate, contacts);
+  renderHydrogenOutreach(candidate, draft, workflowKey, workflow);
+  $('#backToCandidates').onclick = () => { history.pushState(null, '', '#candidates'); setHydrogenView('candidates', { historyMode: 'none' }); };
+  $('#exportCandidate').onclick = () => download(`${String(candidate.company || 'hydrogen-candidate').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`, JSON.stringify(candidate, null, 2));
+  $('#candidate-detail .hydrogen-detail-tabs').addEventListener('click', (event) => { const link = event.target.closest('a[data-detail-tab]'); if (!link) return; event.preventDefault(); hydrogenDetailTab = link.dataset.detailTab; history.pushState(null, '', `#candidate/${encodeURIComponent(selectedCandidateId)}/${encodeURIComponent(hydrogenDetailTab)}`); renderCandidateDetail(); });
+  $('#saveCandidateDraft').onclick = () => { const parsed = parseDraft($('#candidateOutreachDraft').value); localStorage.setItem(`hydrogen-offtaker:outreach-draft:${candidate.candidateId}`, JSON.stringify({ subject: parsed.subject, body: parsed.body, savedAt: new Date().toISOString() })); $('#candidateDraftStatus').textContent = 'Draft saved locally. Nothing has been sent yet.'; };
+  $('#copyCandidateDraft').onclick = async () => { await navigator.clipboard.writeText($('#candidateOutreachDraft').value); $('#candidateDraftStatus').textContent = 'Draft copied. Nothing has been sent yet.'; };
+}
+
+function setHydrogenView(view, { historyMode = 'replace' } = {}) { writeUiState({ activeView: view }); if (view !== 'candidate-detail' && historyMode !== 'none') history[historyMode === 'push' ? 'pushState' : 'replaceState'](null, '', `#${view}`); if (view === 'candidate-detail') renderCandidateDetail(); document.querySelectorAll('.tab').forEach((button) => button.classList.toggle('active', button.dataset.view === view)); document.querySelectorAll('.view').forEach((item) => item.classList.toggle('hidden', item.id !== view)); if ($('#breadcrumb')) $('#breadcrumb').textContent = view === 'candidate-detail' ? 'Candidate detail' : ({ overview: 'Overview', candidates: 'Candidates', search: 'Search workspace', review: 'Review queue' })[view] || 'Overview'; }
+function locationView(state) { const rawHash = location.hash.replace(/^#/, ''); const hash = decodeURIComponent(rawHash); if (hash === 'overview' || hash === 'candidates' || hash === 'search' || hash === 'review') return hash; if (hash.startsWith('candidate/')) { const parts = hash.split('/'); selectedCandidateId = parts[1]; hydrogenDetailTab = hydrogenDetailTabs.includes(parts[2]) ? parts[2] : 'Overview'; return 'candidate-detail'; } return state.activeView === 'candidate-detail' ? 'candidates' : state.activeView || 'overview'; }
+
+function renderCandidates() {
+  const rows = candidates.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+  let config = getCandidateTableConfig();
+  $('#candidates').innerHTML = `<div class="panel"><div class="toolbar"><label>Search<input id="filterText" placeholder="company, site, city"></label><label>Country<select id="filterCountry"><option value="">All</option><option>PL</option><option>DE</option></select></label><label>Status<select id="filterStatus"><option value="">All</option><option value="needs_source_verification">Needs source verification</option><option value="rejected">Rejected</option></select></label><button class="secondary" id="exportCsv">Export CSV</button><button class="secondary" id="exportJson">Export JSON</button></div><div class="candidate-table-heading"><h2>Candidates</h2><div class="column-settings-wrap"><button class="secondary candidate-settings-button" id="candidateSettings" aria-label="Configure columns" title="Configure columns" aria-expanded="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2Zm9 3.6-2.1-.8a7.3 7.3 0 0 0-.7-1.7l.9-2.1-1.7-1.7-2.1.9a7.3 7.3 0 0 0-1.7-.7L12.8 4h-1.6l-.8 2.1a7.3 7.3 0 0 0-1.7.7l-2.1-.9-1.7 1.7.9 2.1a7.3 7.3 0 0 0-.7 1.7l-2.1.8V14l2.1.8c.2.6.4 1.2.7 1.7l-.9 2.1 1.7 1.7 2.1-.9c.5.3 1.1.6 1.7.7l.8 2.1h1.6l.8-2.1c.6-.2 1.2-.4 1.7-.7l2.1.9 1.7-1.7-.9-2.1c.3-.5.6-1.1-.7-1.7l2.1-.8v-1.6Z"/></svg></button><div class="column-settings" id="columnSettings" hidden><strong>Configure columns</strong><div id="columnSettingsList"></div><div class="column-settings-actions"><button class="secondary" id="resetColumnOrder">Reset order</button><button class="secondary" id="resetColumnWidths">Reset widths</button><button class="secondary" id="resetColumnSettings">Reset all</button></div></div></div></div><div class="table-wrap candidate-table-wrap"><table class="candidate-table"><colgroup id="candidateCols"></colgroup><thead id="candidateHead"></thead><tbody id="candidateRows"></tbody></table></div></div>`;
+  const table = $('.candidate-table');
+  const filteredRows = () => { const text = ($('#filterText').value || '').toLowerCase(); const country = $('#filterCountry').value; const status = $('#filterStatus').value; return rows.filter((c) => (!text || `${c.company} ${c.plantSiteName} ${c.city || ''}`.toLowerCase().includes(text)) && (!country || c.country === country) && (!status || c.researchStatus === status)); };
+  const visibleColumns = () => config.order.map((key) => candidateColumns.find((column) => column.key === key)).filter((column) => column && config.visibility[column.key]);
+  const bindHeaders = () => { document.querySelectorAll('.candidate-table th').forEach((header) => { header.addEventListener('dragstart', (event) => { if (event.target.closest('.column-resize-handle')) { event.preventDefault(); return; } event.dataTransfer.setData('text/plain', header.dataset.columnKey); header.classList.add('column-dragging'); }); header.addEventListener('dragend', () => header.classList.remove('column-dragging')); header.addEventListener('dragover', (event) => { event.preventDefault(); header.classList.add('column-drop-target'); }); header.addEventListener('dragleave', () => header.classList.remove('column-drop-target')); header.addEventListener('drop', (event) => { event.preventDefault(); header.classList.remove('column-drop-target'); const from = event.dataTransfer.getData('text/plain'); const to = header.dataset.columnKey; if (!from || from === to) return; const next = config.order.filter((key) => key !== from); next.splice(next.indexOf(to), 0, from); config.order = next; writeTableSetting(candidateTableKeys.order, config.order); renderTable(); renderSettings(); }); }); document.querySelectorAll('.column-resize-handle').forEach((handle) => handle.addEventListener('pointerdown', (event) => { event.preventDefault(); event.stopPropagation(); const key = handle.dataset.resizeKey; const column = candidateColumns.find((item) => item.key === key); const startX = event.clientX; const startWidth = config.widths[key]; const move = (moveEvent) => { config.widths[key] = Math.min(column.maxWidth, Math.max(column.minWidth, startWidth + moveEvent.clientX - startX)); renderTable(); }; const stop = () => { writeTableSetting(candidateTableKeys.widths, config.widths); document.removeEventListener('pointermove', move); }; document.addEventListener('pointermove', move); document.addEventListener('pointerup', stop, { once: true }); })); };
+  const renderTable = () => { const columns = visibleColumns(); $('#candidateCols').innerHTML = columns.map((column) => `<col data-column-key="${column.key}" style="width:${config.widths[column.key]}px">`).join(''); $('#candidateHead').innerHTML = `<tr>${columns.map((column) => `<th tabindex="0" draggable="true" data-column-key="${column.key}" style="width:${config.widths[column.key]}px"><span>${column.label}</span><span class="column-resize-handle" data-resize-key="${column.key}" title="Resize ${column.label}" aria-hidden="true"></span></th>`).join('')}</tr>`; $('#candidateRows').innerHTML = filteredRows().map((candidate) => `<tr>${columns.map((column) => `<td>${column.render(candidate)}</td>`).join('')}</tr>`).join('') || `<tr><td class="muted" colspan="${Math.max(1, columns.length)}">No candidates match these filters.</td></tr>`; table.style.minWidth = `${columns.reduce((total, column) => total + config.widths[column.key], 0)}px`; bindHeaders(); };
+  const renderSettings = () => { $('#columnSettingsList').innerHTML = config.order.map((key, index) => { const column = candidateColumns.find((item) => item.key === key); const canHide = key !== 'company'; return `<div class="column-settings-row"><label><input type="checkbox" data-visible-key="${key}" ${config.visibility[key] ? 'checked' : ''} ${!canHide ? 'disabled' : ''}> ${column.label}${!canHide ? ' <small>(required)</small>' : ''}</label><span><button class="column-move" data-move-key="${key}" data-direction="left" aria-label="Move ${column.label} left" ${index === 0 ? 'disabled' : ''}>←</button><button class="column-move" data-move-key="${key}" data-direction="right" aria-label="Move ${column.label} right" ${index === config.order.length - 1 ? 'disabled' : ''}>→</button></span></div>`; }).join(''); };
+  const applySettings = () => { renderSettings(); renderTable(); };
+  const settings = $('#columnSettings'); $('#candidateSettings').onclick = () => { settings.hidden = !settings.hidden; $('#candidateSettings').setAttribute('aria-expanded', String(!settings.hidden)); if (!settings.hidden) $('#columnSettingsList input:not([disabled])')?.focus(); };
+  $('#columnSettingsList').addEventListener('change', (event) => { const key = event.target.dataset.visibleKey; if (!key) return; config.visibility[key] = event.target.checked; if (!Object.values(config.visibility).some(Boolean)) config.visibility.company = true; writeTableSetting(candidateTableKeys.visibility, config.visibility); applySettings(); });
+  $('#columnSettingsList').addEventListener('click', (event) => { const button = event.target.closest('.column-move'); if (!button) return; const index = config.order.indexOf(button.dataset.moveKey); const target = button.dataset.direction === 'left' ? index - 1 : index + 1; if (target < 0 || target >= config.order.length) return; [config.order[index], config.order[target]] = [config.order[target], config.order[index]]; writeTableSetting(candidateTableKeys.order, config.order); applySettings(); });
+  $('#resetColumnOrder').onclick = () => { config.order = candidateColumns.map((column) => column.key); writeTableSetting(candidateTableKeys.order, config.order); applySettings(); };
+  $('#resetColumnWidths').onclick = () => { config.widths = Object.fromEntries(candidateColumns.map((column) => [column.key, column.defaultWidth])); writeTableSetting(candidateTableKeys.widths, config.widths); renderTable(); };
+  $('#resetColumnSettings').onclick = () => { localStorage.removeItem(candidateTableKeys.visibility); localStorage.removeItem(candidateTableKeys.order); localStorage.removeItem(candidateTableKeys.widths); config = getCandidateTableConfig(); applySettings(); };
+  document.addEventListener('click', (event) => { if (!event.target.closest('.column-settings-wrap')) { settings.hidden = true; $('#candidateSettings').setAttribute('aria-expanded', 'false'); } });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !settings.hidden) { settings.hidden = true; $('#candidateSettings').setAttribute('aria-expanded', 'false'); $('#candidateSettings').focus(); } });
+  ['filterText','filterCountry','filterStatus'].forEach((id) => $('#' + id).addEventListener('input', renderTable)); $('#exportCsv').onclick = () => download('hydrogen-offtakers.csv', exportCsv(filteredRows())); $('#exportJson').onclick = () => download('hydrogen-offtakers.json', JSON.stringify(filteredRows(), null, 2));
+  renderSettings(); renderTable(); $('#candidateRows').addEventListener('click', (event) => { const button = event.target.closest('[data-open-candidate]'); if (!button) return; const candidate = candidates.find((item) => item.candidateId === button.dataset.openCandidate); if (candidate) openHydrogenRecord(candidate); });
+}
+
+/* Reusable table behavior shared by Candidates and zone results. */
+function enhanceTable({ tableEl, tableId, columns, getRows, getRowId, defaultSort = null, bulkActions = [], onRowClick = null }) {
+  if (!tableEl) return;
+  const root = tableEl.parentElement;
+  root.classList.add('enhanced-table-wrap', 'data-card');
+  if (!root.querySelector(':scope > .data-card__scroll')) {
+    const scrollBox = document.createElement('div'); scrollBox.className = 'data-card__scroll';
+    const innerBox = document.createElement('div'); innerBox.className = 'data-card__inner';
+    root.insertBefore(scrollBox, tableEl); innerBox.appendChild(tableEl); scrollBox.appendChild(innerBox);
+    const footerBox = document.createElement('div'); footerBox.className = 'data-card__footer'; root.appendChild(footerBox);
+  }
+  const scroll = root.querySelector(':scope > .data-card__scroll');
+  const footer = root.querySelector(':scope > .data-card__footer');
+  const PAGE_SIZES = [25, 50, 100, 200];
+  const keys = { widths: `${tableId}-widths`, order: `${tableId}-order`, visible: `${tableId}-visible-v1`, pageSize: `${tableId}-pagesize` };
+  const read = (key, fallback) => { try { const value = JSON.parse(localStorage.getItem(key)); return value ?? fallback; } catch { return fallback; } };
+  const defaults = { order: columns.map((column) => column.id), visible: columns.filter((column) => column.defaultVisible !== false).map((column) => column.id), widths: Object.fromEntries(columns.map((column) => [column.id, column.defaultWidth || 140])) };
+  let state = { order: read(keys.order, defaults.order), visible: read(keys.visible, defaults.visible), widths: read(keys.widths, defaults.widths), sort: defaultSort, selected: new Set(), page: 1, pageSize: Number(read(keys.pageSize, 50)) };
+  if (!PAGE_SIZES.includes(state.pageSize)) state.pageSize = 50;
+  const save = () => { try { localStorage.setItem(keys.order, JSON.stringify(state.order)); localStorage.setItem(keys.visible, JSON.stringify(state.visible)); localStorage.setItem(keys.widths, JSON.stringify(state.widths)); localStorage.setItem(keys.pageSize, JSON.stringify(state.pageSize)); } catch { /* local persistence is best effort */ } };
+  const valid = new Set(columns.map((column) => column.id));
+  state.order = [...new Set((Array.isArray(state.order) ? state.order : []).filter((id) => valid.has(id)))]; columns.forEach((column) => { if (!state.order.includes(column.id)) state.order.push(column.id); });
+  state.visible = [...new Set((Array.isArray(state.visible) ? state.visible : defaults.visible).filter((id) => valid.has(id)))]; if (!state.visible.length) state.visible = [columns[0].id];
+  state.widths = Object.fromEntries(columns.map((column) => { const value = Number(state.widths?.[column.id]); return [column.id, Number.isFinite(value) ? Math.min(800, Math.max(column.minWidth || 60, value)) : column.defaultWidth || 140]; }));
+  const shown = () => state.order.map((id) => columns.find((column) => column.id === id)).filter((column) => column && state.visible.includes(column.id));
+  const currentRows = () => { try { return getRows() || []; } catch { return []; } };
+  const valueFor = (column, row) => column.accessor ? column.accessor(row) : row[column.id];
+  const textFor = (value) => String(value ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  const compare = (a, b, column) => { const left = valueFor(column, a); const right = valueFor(column, b); const leftEmpty = left == null || left === ''; const rightEmpty = right == null || right === ''; if (leftEmpty || rightEmpty) return leftEmpty === rightEmpty ? 0 : leftEmpty ? 1 : -1; if (column.sortType === 'number') return Number(left) - Number(right); if (column.sortType === 'date') return String(left).localeCompare(String(right)); if (column.sortType === 'presence') return Boolean(left) === Boolean(right) ? 0 : left ? -1 : 1; return String(left).localeCompare(String(right), undefined, { sensitivity: 'base', numeric: true }); };
+  const sortedRows = () => { const rows = currentRows().slice(); if (!state.sort) return rows; const column = columns.find((item) => item.id === state.sort.id); if (!column) return rows; return rows.sort((a, b) => compare(a, b, column) * (state.sort.direction === 'desc' ? -1 : 1)); };
+  const gearSvg = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>';
+  const triangles = (column) => `<span class="table-sort-icon" aria-hidden="true"><svg viewBox="0 0 10 6" class="sort-up"><path d="m1 5 4-4 4 4Z"/></svg><svg viewBox="0 0 10 6" class="sort-down"><path d="m1 1 4 4 4-4Z"/></svg></span>`;
+  const persistSelection = () => { state.selected = new Set([...state.selected].filter((id) => currentRows().some((row) => String(getRowId(row)) === String(id)))); };
+  const renderPicker = (picker) => { picker.innerHTML = `<strong>COLUMNS</strong><small>Drag to change table order</small><div class="enhanced-column-list">${state.order.map((id) => { const column = columns.find((item) => item.id === id); return `<label draggable="true" data-picker-id="${esc(id)}"><span class="column-grip" aria-hidden="true">⠿</span><input type="checkbox" data-visible-id="${esc(id)}" ${state.visible.includes(id) ? 'checked' : ''} ${state.visible.length === 1 && state.visible.includes(id) ? 'disabled' : ''}> <span>${esc(column.header)}</span></label>`; }).join('')}</div><button type="button" class="secondary enhanced-reset-columns">Reset to defaults</button>`; };
+  const renderBulk = (rows) => { let bar = root.querySelector('.enhanced-bulk-bar'); if (!state.selected.size) { bar?.remove(); return; } if (!bar) { bar = document.createElement('div'); bar.className = 'enhanced-bulk-bar'; root.insertBefore(bar, scroll); } bar.innerHTML = `<strong>${state.selected.size} selected</strong>${bulkActions.map((action) => `<button type="button" class="secondary" data-bulk-action="${esc(action.id)}">${esc(action.label)}</button>`).join('')}<button type="button" class="enhanced-clear-selection">Clear</button>`; };
+  const renderFooter = (total, pages) => {
+    const from = total ? (state.page - 1) * state.pageSize + 1 : 0; const to = Math.min(total, state.page * state.pageSize);
+    footer.innerHTML = `<span>${total ? `Showing ${from}–${to} of ${total}` : 'Showing 0 of 0'}</span><span class="data-card__pager"><label>Per page <select data-page-size aria-label="Rows per page">${PAGE_SIZES.map((size) => `<option value="${size}" ${size === state.pageSize ? 'selected' : ''}>${size}</option>`).join('')}</select></label><button type="button" data-page-prev ${state.page <= 1 ? 'disabled' : ''}>‹ Previous</button><span>Page ${state.page} of ${pages}</span><button type="button" data-page-next ${state.page >= pages ? 'disabled' : ''}>Next ›</button></span>`;
+  };
+  const render = () => {
+    const allRows = sortedRows(); persistSelection(); const columns = shown();
+    const pages = Math.max(1, Math.ceil(allRows.length / state.pageSize)); state.page = Math.min(Math.max(1, state.page), pages);
+    const rows = allRows.slice((state.page - 1) * state.pageSize, state.page * state.pageSize); const rowIds = rows.map((row) => String(getRowId(row))); const selectedVisible = rowIds.filter((id) => state.selected.has(id));
+    const picker = root.querySelector('.enhanced-column-picker'); if (picker) renderPicker(picker);
+    tableEl.innerHTML = `<colgroup><col data-enhanced-column="bulkSelect" style="width:36px">${columns.map((column) => `<col data-enhanced-column="${esc(column.id)}" style="width:${state.widths[column.id]}px">`).join('')}<col data-enhanced-column="columnPicker" style="width:46px"></colgroup><thead><tr><th class="enhanced-check-column"><input type="checkbox" aria-label="Select all on this page" ${rows.length && selectedVisible.length === rows.length ? 'checked' : ''} ${selectedVisible.length && selectedVisible.length < rows.length ? 'data-indeterminate="true"' : ''} ${rows.length ? '' : 'disabled'}></th>${columns.map((column) => { const active = state.sort?.id === column.id; const sortValue = active ? (state.sort.direction === 'desc' ? 'descending' : 'ascending') : 'none'; return `<th draggable="true" data-enhanced-column="${esc(column.id)}" aria-sort="${sortValue}"><span class="enhanced-header-label" title="Drag header to reorder · click to sort"><button type="button" data-sort-id="${esc(column.id)}">${esc(column.header)}${triangles(column)}</button></span><span role="separator" aria-orientation="vertical" aria-label="Resize column" class="col-resizer" data-resize-id="${esc(column.id)}"></span></th>`; }).join('')}<th class="enhanced-gear-column"><button type="button" class="enhanced-gear" aria-label="Columns" title="Columns">${gearSvg}</button></th></tr></thead><tbody>${rows.map((row) => `<tr data-enhanced-row-id="${esc(getRowId(row))}"><td class="enhanced-check-column"><input type="checkbox" data-row-select="${esc(getRowId(row))}" ${state.selected.has(String(getRowId(row))) ? 'checked' : ''}></td>${columns.map((column) => `<td data-enhanced-cell="${esc(column.id)}" title="${esc(textFor(column.cell ? column.cell(row) : valueFor(column, row)))}">${column.cell ? column.cell(row) : esc(valueFor(column, row))}</td>`).join('')}<td class="enhanced-gear-column"></td></tr>`).join('') || `<tr><td class="muted enhanced-empty-row" colspan="${columns.length + 2}">No candidates match these filters.</td></tr>`}</tbody></table>`;
+    const applyWidth = () => { tableEl.style.width = `${36 + 46 + columns.reduce((sum, column) => sum + state.widths[column.id], 0)}px`; tableEl.style.minWidth = '100%'; }; applyWidth();
+    const selectAll = tableEl.querySelector('thead input[type="checkbox"]'); if (selectAll?.dataset.indeterminate) selectAll.indeterminate = true;
+    renderBulk(rows); renderFooter(allRows.length, pages);
+    const pickerButton = tableEl.querySelector('.enhanced-gear'); if (pickerButton) pickerButton.onclick = (event) => { event.stopPropagation(); const panel = root.querySelector('.enhanced-column-picker'); panel.hidden = !panel.hidden; if (!panel.hidden) renderPicker(panel); };
+    tableEl.querySelectorAll('tbody tr[data-enhanced-row-id]').forEach((rowEl) => { rowEl.addEventListener('click', (event) => { const openButton = event.target.closest('.open-candidate,.zone-open-button'); const row = currentRows().find((item) => String(getRowId(item)) === rowEl.dataset.enhancedRowId); if (openButton) { event.stopPropagation(); onRowClick?.(getRowId(row)); return; } if (event.target.closest('input,button,a,select,details,.enhanced-gear-column')) { event.stopPropagation(); return; } onRowClick?.(getRowId(row)); }); });
+    tableEl.querySelectorAll('[data-row-select]').forEach((input) => input.addEventListener('change', () => { const id = String(input.dataset.rowSelect); if (input.checked) state.selected.add(id); else state.selected.delete(id); render(); }));
+    if (selectAll) selectAll.addEventListener('change', () => { rowIds.forEach((id) => inputState(id, selectAll.checked)); render(); });
+    const inputState = (id, checked) => { if (checked) state.selected.add(id); else state.selected.delete(id); };
+    tableEl.querySelectorAll('[data-sort-id]').forEach((button) => button.addEventListener('click', (event) => { event.stopPropagation(); const id = button.dataset.sortId; state.sort = state.sort?.id === id ? { id, direction: state.sort.direction === 'asc' ? 'desc' : 'asc' } : { id, direction: 'asc' }; state.page = 1; render(); }));
+    tableEl.querySelectorAll('.col-resizer').forEach((handle) => handle.addEventListener('pointerdown', (event) => { event.preventDefault(); event.stopPropagation(); const id = handle.dataset.resizeId; const column = columns.find((item) => item.id === id); const startWidth = state.widths[id]; const startX = event.clientX; const th = handle.closest('th'); const col = tableEl.querySelector(`col[data-enhanced-column="${id}"]`); let frame = 0; const move = (moveEvent) => { const width = Math.min(800, Math.max(column.minWidth || 60, startWidth + moveEvent.clientX - startX)); state.widths[id] = width; if (frame) cancelAnimationFrame(frame); frame = requestAnimationFrame(() => { col.style.width = `${width}px`; th.style.width = `${width}px`; applyWidth(); }); }; const stop = () => { try { handle.releasePointerCapture?.(event.pointerId); } catch { /* synthetic pointers cannot be captured */ } window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop); th.setAttribute('draggable', 'true'); document.body.style.userSelect = ''; document.body.style.cursor = ''; save(); }; th.setAttribute('draggable', 'false'); try { handle.setPointerCapture?.(event.pointerId); } catch { /* best effort */ } document.body.style.userSelect = 'none'; document.body.style.cursor = 'col-resize'; window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop); window.addEventListener('pointercancel', stop); }));
+    tableEl.querySelectorAll('thead th[draggable="true"]').forEach((header) => { header.addEventListener('dragstart', (event) => { if (event.target.closest('.col-resizer')) { event.preventDefault(); return; } event.dataTransfer.setData('text/plain', header.dataset.enhancedColumn); header.classList.add('enhanced-column-dragging'); }); header.addEventListener('dragend', () => header.classList.remove('enhanced-column-dragging')); header.addEventListener('dragover', (event) => { event.preventDefault(); header.classList.add('enhanced-column-drop-target'); }); header.addEventListener('dragleave', () => header.classList.remove('enhanced-column-drop-target')); header.addEventListener('drop', (event) => { event.preventDefault(); header.classList.remove('enhanced-column-drop-target'); const from = event.dataTransfer.getData('text/plain'); const to = header.dataset.enhancedColumn; if (!from || !to || from === to) return; state.order = state.order.filter((id) => id !== from); state.order.splice(state.order.indexOf(to), 0, from); save(); render(); }); });
+  };
+  let picker = root.querySelector('.enhanced-column-picker'); if (!picker) { picker = document.createElement('div'); picker.className = 'enhanced-column-picker'; picker.hidden = true; root.appendChild(picker); picker.addEventListener('change', (event) => { const id = event.target.dataset.visibleId; if (!id) return; state.visible = state.visible.includes(id) ? state.visible.filter((item) => item !== id) : [...state.visible, id]; if (!state.visible.length) state.visible = [columns[0].id]; save(); render(); }); picker.addEventListener('click', (event) => { const reset = event.target.closest('.enhanced-reset-columns'); if (!reset) return; state.order = defaults.order.slice(); state.visible = defaults.visible.slice(); state.widths = { ...defaults.widths }; state.sort = defaultSort; save(); render(); }); picker.addEventListener('dragstart', (event) => { const item = event.target.closest('[data-picker-id]'); if (item) { event.dataTransfer.setData('text/plain', item.dataset.pickerId); item.classList.add('enhanced-column-dragging'); } }); picker.addEventListener('dragend', (event) => event.target.closest('[data-picker-id]')?.classList.remove('enhanced-column-dragging')); picker.addEventListener('dragover', (event) => { if (event.target.closest('[data-picker-id]')) event.preventDefault(); }); picker.addEventListener('drop', (event) => { const target = event.target.closest('[data-picker-id]'); const from = event.dataTransfer.getData('text/plain'); if (!target || !from) return; event.preventDefault(); const to = target.dataset.pickerId; if (from === to) return; state.order = state.order.filter((id) => id !== from); state.order.splice(Math.max(0, state.order.indexOf(to)), 0, from); save(); render(); }); }
+  if (!root.dataset.enhancedEvents) { root.dataset.enhancedEvents = 'true'; root.addEventListener('click', (event) => { const actionButton = event.target.closest('[data-bulk-action]'); if (actionButton) { const action = bulkActions.find((item) => item.id === actionButton.dataset.bulkAction); const selectedRows = currentRows().filter((row) => state.selected.has(String(getRowId(row)))); action?.onClick?.(selectedRows); } const clear = event.target.closest('.enhanced-clear-selection'); if (clear) { state.selected.clear(); render(); } }); document.addEventListener('click', (event) => { if (!root.contains(event.target) && picker) picker.hidden = true; }); document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && picker && !picker.hidden) picker.hidden = true; }); }
+  footer.addEventListener('change', (event) => { const select = event.target.closest('[data-page-size]'); if (!select) return; state.pageSize = Number(select.value) || 50; state.page = 1; save(); render(); scroll.scrollTop = 0; });
+  footer.addEventListener('click', (event) => { const prev = event.target.closest('[data-page-prev]'); const next = event.target.closest('[data-page-next]'); if (!prev && !next) return; state.page += next ? 1 : -1; render(); scroll.scrollTop = 0; });
+  render();
+  return { render, state, resetPage: () => { state.page = 1; } };
+}
+
+function resultCard(result, index) {
+  const saved = candidates.some((candidate) => candidate.sourceUrls?.[0] === result.url);
+  return `<article class="result"><h3>${esc(result.title)} <span class="pill">${esc(result.classification || 'unclassified')}</span></h3><a href="${esc(result.url)}" target="_blank" rel="noreferrer">${esc(result.url)}</a><p>${esc(result.snippet)}</p><small class="muted">${esc(result.provider)} · rank ${result.rank} · ${esc(result.searchedAt)} · raw ${esc(result.rawResponseReference)}</small><br><div class="result-actions"><button class="secondary open-search-result" data-index="${index}">Open ↗</button><button class="secondary save-result" data-index="${index}" ${saved ? 'disabled' : ''}>${saved ? 'Saved' : 'Save candidate'}</button></div></article>`;
+}
+function renderSearchResults() { if (!$('#results')) return; const visible = searchResults.map((result, index) => ({ result, index })).filter(({ result }) => result.companyWebsiteEligible !== false); $('#results').innerHTML = visible.map(({ result, index }) => resultCard(result, index)).join('') || '<p class="muted">No likely company websites in this search. Excluded results remain in preserved history.</p>'; const excluded = searchResults.length - visible.length; if ($('#searchNotice') && excluded > 0) $('#searchNotice').insertAdjacentHTML('beforeend', `<div class="muted">${excluded} news, SEO, press, research, or other non-company results preserved in Excluded content.</div>`); const known = new Set(searchHistory.map((result) => result.searchResultId || `${result.url}|${result.searchedAt}`)); searchHistory.push(...searchResults.filter((result) => !known.has(result.searchResultId || `${result.url}|${result.searchedAt}`))); if ($('#historyResults')) renderHistory(); }
+
+function renderCandidatesEnhanced() {
+  const candidateRows = () => { const text = ($('#filterText')?.value || '').toLowerCase(); const country = $('#filterCountry')?.value || ''; const status = $('#filterStatus')?.value || ''; return candidates.filter((candidate) => (!text || `${candidate.company} ${candidate.plantSiteName} ${candidate.city || ''}`.toLowerCase().includes(text)) && (!country || candidate.country === country) && (!status || candidate.researchStatus === status)); };
+  $('#candidates').innerHTML = `<div class="panel"><div class="toolbar"><label>Search<input id="filterText" placeholder="company, site, city"></label><label>Country<select id="filterCountry"><option value="">All</option><option>PL</option><option>DE</option></select></label><label>Status<select id="filterStatus"><option value="">All</option><option value="needs_source_verification">Needs source verification</option><option value="rejected">Rejected</option></select></label><button class="secondary" id="exportCsv">Export CSV</button><button class="secondary" id="exportJson">Export JSON</button></div><div class="table-wrap candidate-table-wrap"><table class="candidate-table"></table></div></div>`;
+  const columns = candidateColumns.map((column) => ({ id: column.key, header: column.label, defaultWidth: column.defaultWidth, minWidth: column.minWidth, sortType: ['jevScore', 'score'].includes(column.key) ? 'number' : 'string', accessor: (candidate) => column.key === 'score' ? candidate.score : column.key === 'jevScore' ? candidate.jevScore : candidate[column.key], cell: (candidate) => column.render(candidate) }));
+  const table = enhanceTable({ tableEl: $('.candidate-table'), tableId: 'offtaker-candidates', columns, getRows: candidateRows, getRowId: (candidate) => candidate.candidateId, defaultSort: { id: 'score', direction: 'desc' }, bulkActions: [{ id: 'export', label: 'Export selected (CSV)', onClick: (rows) => download('hydrogen-offtakers-selected.csv', exportCsv(rows)) }], onRowClick: (id) => { const candidate = candidates.find((item) => String(item.candidateId) === String(id)); if (candidate) openHydrogenRecord(candidate); } });
+  ['filterText','filterCountry','filterStatus'].forEach((id) => $('#' + id).addEventListener('input', () => { table.resetPage(); table.render(); }));
+  $('#exportCsv').onclick = () => download('hydrogen-offtakers.csv', exportCsv(candidateRows())); $('#exportJson').onclick = () => download('hydrogen-offtakers.json', JSON.stringify(candidateRows(), null, 2));
+}
+function historyBucket(result) { return result.jevVote === 'Reject' ? 'reject' : result.jevVote === 'Advance' ? 'advance' : result.jevVote === 'Verify' ? 'verify' : 'hold'; }
+function historyMatches(result) { if (historyFilter === 'company') return result.companyWebsiteEligible === true; if (historyFilter === 'excluded') return result.companyWebsiteEligible === false; return historyBucket(result) === historyFilter; }
+function historyCard(result, index) { return resultCard({ ...result, title: `${result.title} [JEV ${result.jevVote || 'Not evaluated'} · ${result.jevScore ?? '—'}]` }, index); }
+function renderHistory() {
+  const filtered = searchHistory.filter((result) => historyFilter === 'all' || historyMatches(result));
+  $('#historyResults').innerHTML = filtered.map(historyCard).join('') || '<p class="muted">No preserved results in this tab.</p>';
+}
+async function saveResult(index) {
+  const latitude = Number(window.prompt('Enter verified site latitude (required for the 250 km border rule):', ''));
+  const longitude = Number(window.prompt('Enter verified site longitude (required for the 250 km border rule):', ''));
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) { toast('Candidate not saved: verified coordinates are required.'); return; }
+  const response = await fetch('/api/hydrogen/candidates', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...searchResults[index], latitude, longitude }) });
+  const data = await response.json();
+  if (!response.ok) { toast(data.error || 'Candidate could not be saved.'); return; }
+  if (data.created) { candidates.push(data.candidate); toast('Candidate saved for source verification.'); } else toast('This source is already saved.');
+  renderOverview(); renderCandidates(); renderSearchResults(); $('#candidateCount').textContent = candidates.length;
+}
+const sectorQueryTerms = {
+  'Refining & petrochemicals': { en:'refinery petrochemical hydrogen process heat', pl:'rafineria petrochemia wodór ciepło procesowe', de:'Raffinerie Petrochemie Wasserstoff Prozesswärme' },
+  'Chemicals & fertilisers': { en:'chemical fertiliser plant hydrogen process heat', pl:'zakład chemiczny nawozy wodór ciepło procesowe', de:'Chemiewerk Düngemittel Wasserstoff Prozesswärme' },
+  'Metals & steel': { en:'steel metal plant hydrogen furnace', pl:'huta stal metal wodór piec', de:'Stahlwerk Metall Wasserstoff Ofen' },
+  Glass: { en:'glass furnace hydrogen burner', pl:'huta szkła wodór piec', de:'Glaswerk Wasserstoffbrenner' },
+  'Cement, concrete & minerals': { en:'cement concrete minerals hydrogen kiln', pl:'cement beton minerały wodór piec', de:'Zement Beton Mineralien Wasserstoff Ofen' },
+  'Ceramics & bricks': { en:'ceramic brick kiln hydrogen', pl:'ceramika cegielnia wodór piec', de:'Keramik Ziegelwerk Wasserstoff Ofen' },
+  'Pulp, paper & tissue': { en:'paper pulp tissue mill hydrogen process steam', pl:'papier celuloza tissue wodór para technologiczna', de:'Papier Zellstoff Tissue Wasserstoff Prozessdampf' },
+  'Food & beverage': { en:'food beverage plant hydrogen boiler process heat', pl:'zakład spożywczy wodór kocioł ciepło procesowe', de:'Lebensmittel Wasserstoff Kessel Prozesswärme' },
+  'Biofuels & biomass': { en:'biofuel biomass plant hydrogen process heat', pl:'biopaliwa biomasa wodór ciepło procesowe', de:'Biokraftstoff Biomasse Wasserstoff Prozesswärme' },
+  'Wood & pellets': { en:'wood pellet plant hydrogen dryer process heat', pl:'drewno pellet wodór suszarnia ciepło procesowe', de:'Holz Pellets Wasserstoff Trockner Prozesswärme' },
+  'Plastics, fibres & rubber': { en:'plastics fibres rubber plant hydrogen process heat', pl:'tworzywa włókna guma wodór ciepło procesowe', de:'Kunststoffe Fasern Gummi Wasserstoff Prozesswärme' },
+  'Automotive & machinery': { en:'automotive machinery manufacturing hydrogen process heat', pl:'motoryzacja maszyny wodór ciepło procesowe', de:'Automobil Maschinenbau Wasserstoff Prozesswärme' },
+  'Lithium, batteries & semiconductors': { en:'lithium battery semiconductor plant hydrogen process heat', pl:'lit baterie półprzewodniki wodór ciepło procesowe', de:'Lithium Batterien Halbleiter Wasserstoff Prozesswärme' },
+  'Power & utilities': { en:'power utility district heat hydrogen', pl:'energia ciepłownictwo wodór', de:'Kraftwerk Fernwärme Wasserstoff' },
+  'Industrial services & infrastructure': { en:'industrial infrastructure hydrogen process heat', pl:'infrastruktura przemysłowa wodór ciepło procesowe', de:'Industrie Infrastruktur Wasserstoff Prozesswärme' },
+  'Other industrial': { en:'industrial company hydrogen process heat', pl:'przemysł wodór ciepło procesowe', de:'Industrie Wasserstoff Prozesswärme' },
+};
+const signalQueryTerms = { hydrogen_fuel_switch:{ en:'hydrogen fuel switch process heat', pl:'wodór zmiana paliwa ciepło procesowe', de:'Wasserstoff Brennstoffwechsel Prozesswärme' }, existing_hydrogen_use:{ en:'industrial hydrogen use', pl:'przemysłowe użycie wodoru', de:'industrielle Wasserstoffnutzung' }, hydrogen_trial:{ en:'hydrogen burner furnace blending trial', pl:'próba palnika pieca mieszania wodoru', de:'Wasserstoffbrenner Ofen Beimischung Versuch' }, fossil_replacement:{ en:'fossil fuel replacement hydrogen', pl:'zastąpienie paliwa kopalnego wodorem', de:'Ersatz fossiler Brennstoffe durch Wasserstoff' }, ets_process_heat:{ en:'EU ETS process heat hydrogen', pl:'EU ETS ciepło procesowe wodór', de:'EU ETS Prozesswärme Wasserstoff' } };
+const queryGuard = 'industrial energy user offtaker 2-10 tonnes hydrogen per day process heat -supplier -electrolyser -electrolyzer -pipeline -association -cluster -consultant -bus -truck -refuelling -refueling -rail -news -newsletter -blog -press -webinar -podcast -conference -research -paper -study -report';
+function buildSectorQuery() { const language = $('#language').value; const country = $('#country').value === 'DE' ? 'Germany Deutschland' : $('#country').value === 'PL' ? 'Poland Polska' : 'Poland Polska Germany Deutschland'; const sector = $('#sector').value; const signal = $('#hydrogenSignalFilter')?.value || ''; const zone = buildIndustrialZoneQueryTerm($('#industrialZone').value); const sectorTerm = sector ? sectorQueryTerms[sector][language] : (language === 'de' ? 'Industrie Prozesswärme Wasserstoff' : language === 'pl' ? 'przemysł ciepło procesowe wodór' : 'industrial process heat hydrogen'); const signalTerm = signalQueryTerms[signal]?.[language] || ''; return `${sectorTerm} ${signalTerm} ${zone ? `${zone} ` : ''}${country} ${queryGuard} industrial site within 250 km of the Polish-German border`; }
+function zoneIsInRange(zone) { return Number.isFinite(zone.distanceKm) && zone.distanceKm <= 250 && !/borderline|zone-wide/i.test(zone.gisStatus || ''); }
+function industrialZoneOptionsMarkup(country) { const zones = pipelineZonesForCountry(country); const inRange = zones.filter(zoneIsInRange); const needsReview = zones.filter((zone) => !zoneIsInRange(zone)); const option = (zone) => `<option value="${esc(zone.id)}">${esc(zoneOptionLabel(zone))}</option>`; return `<option value="">All ${country === 'PL' ? 'Polish' : country === 'DE' ? 'German' : 'Polish and German'} zones</option>${inRange.map(option).join('')}${needsReview.length ? '<option disabled>──────── GIS review required below ────────</option>' : ''}${needsReview.map(option).join('')}`; }
+function renderIndustrialZoneOptions(country, selectedZone = '') { const zones = pipelineZonesForCountry(country); $('#industrialZone').innerHTML = industrialZoneOptionsMarkup(country); if (zones.some((zone) => zone.id === selectedZone)) $('#industrialZone').value = selectedZone; }
+function linkCell(url, label) { return url ? `<a href="${esc(url)}" target="_blank" rel="noreferrer">${label}</a>` : '<span class="muted">Not found</span>'; }
+function rawLatestJev(zoneId, company) { return [...jevScreenings].reverse().find((item) => item.zoneId === zoneId && item.company === company) || null; }
+function latestJev(zoneId, company) {
+  const jev = rawLatestJev(zoneId, company);
+  const reason = jevExclusionReason(zoneById(zoneId)?.occupants?.find((item) => item.company === company));
+  if (!reason || jev?.jevVote === 'Rejected') return jev;
+  const summary = jev?.jevSummary ? jev.jevSummary.replace(/^JEV:\s*[^·]*/, `JEV: Rejected (${reason}) `) : `JEV: Rejected (${reason})`;
+  return { ...(jev || {}), jevVote: 'Rejected', jevChoice: 'Rejected', jevScore: jev?.jevScore ?? null, jevSummary: summary, jevMode: jev?.jevMode || 'Rule-based exclusion', evaluatedAt: jev?.evaluatedAt || 'static rule' };
+}
+function renderJev(jev) { if (!jev) return '<span class="muted">Not screened</span>'; const pillClass = jev.jevVote === 'Rejected' ? 'bad' : jev.jevVote === 'Shortlisted' ? '' : 'warn'; return `<span class="pill ${pillClass}">${esc(jev.jevVote)}</span><br><small>${esc(jev.jevSummary || `JEV: ${jev.jevChoice} · ${jev.jevScore ?? '—'}/100`)}</small><br><small class="muted">${esc(jev.jevMode)} · ${esc(jev.evaluatedAt)}</small>`; }
+function renderZoneOccupants() { const zone = zoneById($('#industrialZone').value); const occupants = zone?.occupants || []; $('#zoneOccupants').innerHTML = !zone ? '<p class="muted">Select an industrial zone to view named occupants.</p>' : occupants.length ? `<h3>${esc(zone.label)} — named industries</h3><div class="table-wrap"><table><thead><tr><th>Company / site</th><th>Industry</th><th>Website</th><th>LinkedIn</th><th>Screening status</th><th>JEV Vote / Noul factors</th><th>JEV Score</th></tr></thead><tbody>${occupants.map((occupant) => { const jev = latestJev(zone.id, occupant.company); return `<tr><td><b>${esc(occupant.company)}</b></td><td>${esc(occupant.industry)}</td><td>${linkCell(occupant.websiteUrl, 'Website')}</td><td>${linkCell(occupant.linkedinUrl, 'LinkedIn')}</td><td>${esc(occupant.status)}<br><small class="muted">${esc(occupant.linkEvidenceStatus || 'Link research pending')}</small></td><td>${renderJev(jev)}</td><td>${jev?.jevScore == null ? '<span class="muted">—</span>' : `${jev.jevScore}/100`}</td></tr>`; }).join('')}</tbody></table></div>` : `<p class="muted">No occupant list has been captured for ${esc(zone.label)} yet. Search the zone and promote only identifiable industrial sites.</p>`; }
+const zoneTableColumns = [
+  { key: 'company', label: 'Company / site', render: (o) => `<b>${esc(o.company)}</b>` },
+  { key: 'industry', label: 'Industry', render: (o) => esc(o.industry) },
+  { key: 'website', label: 'Website', render: (o) => linkCell(o.websiteUrl, 'Website') },
+  { key: 'linkedin', label: 'LinkedIn', render: (o) => linkCell(o.linkedinUrl, 'LinkedIn') },
+  { key: 'status', label: 'Screening status', render: (o) => `${esc(o.status)}<br><small class="muted">${esc(o.linkEvidenceStatus || 'Link research pending')}</small>` },
+  { key: 'jev', label: 'JEV Vote / Noul factors', render: (o, zone) => renderJev(latestJev(zone.id, o.company)) },
+  { key: 'jevScore', label: 'JEV Score', render: (o, zone) => { const jev = latestJev(zone.id, o.company); return jev?.jevScore == null ? '<span class="muted">—</span>' : `${jev.jevScore}/100`; } },
+  { key: 'open', label: 'Review', render: (o, zone) => `<button type="button" class="secondary zone-open-button" data-open-zone="${esc(zone.id)}" data-zone-company="${esc(o.company)}">Open ↗</button>` },
+];
+const zoneColumnDefaults = { company: 220, industry: 160, website: 120, linkedin: 120, status: 180, jev: 230, jevScore: 110, open: 105 };
+zoneTableColumns.forEach((column) => { column.defaultWidth = zoneColumnDefaults[column.key] || 140; column.minWidth = 96; column.maxWidth = 480; });
+function renderZoneOccupantsConfigured() {
+  const zone = zoneById($('#industrialZone').value); const occupants = zone?.occupants || []; const key = 'hydrogen-offtaker:zone-table:v1:';
+  if (!zone) { $('#zoneOccupants').innerHTML = '<p class="muted">Select an industrial zone to view named occupants.</p>'; return; }
+  if (!occupants.length) { $('#zoneOccupants').innerHTML = `<p class="muted">No occupant list has been captured for ${esc(zone.label)} yet. Search the zone and promote only identifiable industrial sites.</p>`; return; }
+  const valid = new Set(zoneTableColumns.map((column) => column.key)); let order = []; let visibility = {};
+  try { order = JSON.parse(localStorage.getItem(`${key}order`)) || []; visibility = JSON.parse(localStorage.getItem(`${key}visibility`)) || {}; } catch { /* default settings */ }
+  order = [...new Set(order.filter((columnKey) => valid.has(columnKey)))]; zoneTableColumns.forEach((column) => { if (!order.includes(column.key)) order.push(column.key); });
+  visibility = Object.fromEntries(zoneTableColumns.map((column) => [column.key, visibility[column.key] !== false])); if (!Object.values(visibility).some(Boolean)) visibility.company = true;
+  const save = () => { localStorage.setItem(`${key}order`, JSON.stringify(order)); localStorage.setItem(`${key}visibility`, JSON.stringify(visibility)); };
+  const shown = () => order.map((columnKey) => zoneTableColumns.find((column) => column.key === columnKey)).filter((column) => column && visibility[column.key]);
+  $('#zoneOccupants').innerHTML = `<div class="zone-table-heading"><h3>${esc(zone.label)} — named industries</h3><div class="column-settings-wrap"><button class="secondary candidate-settings-button" id="zoneSettings" aria-label="Configure zone columns" title="Configure zone columns" aria-expanded="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2Zm9 3.6-2.1-.8a7.3 7.3 0 0 0-.7-1.7l.9-2.1-1.7.9a7.3 7.3 0 0 0-1.7-.7L12.8 4h-1.6l-.8 2.1a7.3 7.3 0 0 0-1.7.7l-2.1-.9-1.7 1.7.9 2.1a7.3 7.3 0 0 0-.7 1.7l-2.1.8V14l2.1.8c.2.6.4 1.2.7 1.7l-.9 2.1 1.7 1.7 2.1-.9c.5.3 1.1.6 1.7.7l.8 2.1h1.6l.8-2.1c.6-.2 1.2-.4 1.7-.7l2.1.9 1.7-1.7-.9-2.1c.3-.5.6-1.1.7-1.7l2.1-.8v-1.6Z"/></svg></button><div class="column-settings" id="zoneSettingsMenu" hidden><strong>Configure zone columns</strong><div id="zoneSettingsList"></div></div></div></div><div class="table-wrap candidate-table-wrap"><table class="zone-occupants-table"><thead id="zoneHead"></thead><tbody id="zoneBody"></tbody></table></div>`;
+  const render = () => { const columns = shown(); $('#zoneHead').innerHTML = `<tr>${columns.map((column) => `<th draggable="true" data-zone-column="${column.key}">${column.label}</th>`).join('')}</tr>`; $('#zoneBody').innerHTML = occupants.map((occupant) => `<tr>${columns.map((column) => `<td>${column.render(occupant, zone)}</td>`).join('')}</tr>`).join(''); document.querySelectorAll('#zoneHead th').forEach((header) => { header.addEventListener('dragstart', (event) => event.dataTransfer.setData('text/plain', header.dataset.zoneColumn)); header.addEventListener('dragover', (event) => { event.preventDefault(); header.classList.add('column-drop-target'); }); header.addEventListener('dragleave', () => header.classList.remove('column-drop-target')); header.addEventListener('drop', (event) => { event.preventDefault(); header.classList.remove('column-drop-target'); const from = event.dataTransfer.getData('text/plain'); const to = header.dataset.zoneColumn; if (!from || from === to) return; order = order.filter((columnKey) => columnKey !== from); order.splice(order.indexOf(to), 0, from); save(); render(); renderSettings(); }); }); };
+  const renderSettings = () => { $('#zoneSettingsList').innerHTML = order.map((columnKey, index) => { const column = zoneTableColumns.find((item) => item.key === columnKey); return `<div class="column-settings-row"><label><input type="checkbox" data-zone-visible="${columnKey}" ${visibility[columnKey] ? 'checked' : ''} ${columnKey === 'company' ? 'disabled' : ''}> ${column.label}${columnKey === 'company' ? ' <small>(required)</small>' : ''}</label><span><button class="column-move" data-zone-move="${columnKey}" data-direction="left" ${index === 0 ? 'disabled' : ''}>←</button><button class="column-move" data-zone-move="${columnKey}" data-direction="right" ${index === order.length - 1 ? 'disabled' : ''}>→</button></span></div>`; }).join(''); };
+  const menu = $('#zoneSettingsMenu'); $('#zoneSettings').onclick = () => { menu.hidden = !menu.hidden; $('#zoneSettings').setAttribute('aria-expanded', String(!menu.hidden)); }; $('#zoneSettingsList').addEventListener('change', (event) => { const columnKey = event.target.dataset.zoneVisible; if (!columnKey) return; visibility[columnKey] = event.target.checked; save(); render(); renderSettings(); }); $('#zoneSettingsList').addEventListener('click', (event) => { const button = event.target.closest('[data-zone-move]'); if (!button) return; const index = order.indexOf(button.dataset.zoneMove); const target = button.dataset.direction === 'left' ? index - 1 : index + 1; if (target < 0 || target >= order.length) return; [order[index], order[target]] = [order[target], order[index]]; save(); render(); renderSettings(); }); renderSettings(); render();
+}
+renderZoneOccupants = renderZoneOccupantsConfigured;
+
+const hydrogenSectorTerms = {
+  'Refining & petrochemicals': ['refin','petrochemical','oil refining','crude-oil','used-oil'],
+  'Chemicals & fertilisers': ['chemical','chlor','ammonia','fertil','polyol','soda ash','resin','surfactant','specialty','pharmaceutical'],
+  'Metals & steel': ['steel','metal','foundry','forge','forging','aluminium','aluminum','non-ferrous','rolling','copper smelting'],
+  Glass: ['glass'],
+  'Cement, concrete & minerals': ['cement','lime','clinker','concrete','gypsum','mineral'],
+  'Ceramics & bricks': ['ceramic','brick','tile','kiln'],
+  'Pulp, paper & tissue': ['paper','pulp','tissue'],
+  'Food & beverage': ['food','bakery','meat','beverage'],
+  'Biofuels & biomass': ['bioethanol','biodiesel','biomethane','biomethanol','bioenergy'],
+  'Wood & pellets': ['wood','pellet','timber'],
+  'Plastics, fibres & rubber': ['plastic','polyamide','polyester','fibre','fiber','polyurethane','foam','polymer','synthetic rubber','tyre','tire'],
+  'Automotive & machinery': ['automotive','vehicle','machinery','machine','aerospace','engine','engines','transmission','pipework','apparatus','industrial equipment'],
+  'Lithium, batteries & semiconductors': ['lithium','battery','semiconductor','silicon','alumina'],
+  'Power & utilities': ['power generation','district heat','process utilities','energy and process utilities','hydrogen production','electrolysis'],
+  'Industrial services & infrastructure': ['pipeline','industrial-park','logistics','transport','maintenance','technical-gas','tank storage','site services'],
+  'Other industrial': [],
+};
+const hydrogenSectorOrder = ['Lithium, batteries & semiconductors','Biofuels & biomass','Automotive & machinery','Plastics, fibres & rubber','Refining & petrochemicals','Chemicals & fertilisers','Metals & steel','Glass','Cement, concrete & minerals','Ceramics & bricks','Pulp, paper & tissue','Food & beverage','Wood & pellets','Power & utilities','Industrial services & infrastructure','Other industrial'];
+function hydrogenSectorForText(value) { const text = String(value || '').toLowerCase(); return hydrogenSectorOrder.find((sector) => hydrogenSectorTerms[sector].some((term) => new RegExp(`(?:^|[^a-z0-9])${term.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}(?:$|[^a-z0-9])`, 'i').test(text))) || 'Other industrial'; }
+function updateSectorCounts() { const select = $('#sector'); if (!select || !$('#country')) return; const records = pipelineRecordsForCurrentFilters(false); [...select.options].forEach((option) => { if (option.dataset.sectorValue === undefined) option.dataset.sectorValue = option.value; const base = option.dataset.sectorValue; option.value = base; if (!base) { option.textContent = 'All sectors'; return; } const count = records.filter(({ occupant, zone }) => hydrogenSectorForText(`${occupant.company} ${occupant.industry} ${zone.label}`) === base).length; option.textContent = `${base} (${count})`; }); }
+function ensurePipelineVisible() { const sector = $('#sector')?.value; if (!sector || !$('#country')) return; const selectedZone = zoneById($('#industrialZone')?.value); const records = selectedZone ? (selectedZone.occupants || []).map((occupant) => `${occupant.company} ${occupant.industry} ${selectedZone.label}`) : pipelineZonesForCountry($('#country').value).flatMap((zone) => (zone.occupants || []).map((occupant) => `${occupant.company} ${occupant.industry} ${zone.label}`)); if (records.length && !records.some((record) => hydrogenSectorForText(record) === sector)) { $('#sector').value = ''; $('#query').value = buildSectorQuery(); saveSearchUiState(); } }
+function renderZoneOccupantsPaginated() {
+  if (!$('#zoneOccupants')) return;
+  const zoneRoot = $('#zoneOccupants');
+  if (!zoneRoot.dataset.settingsHeaderObserver) {
+    let sourceSettingsButton = null;
+    const mountSettingsHeader = () => { const row = $('#zoneHead tr'); if (!sourceSettingsButton) sourceSettingsButton = $('#zoneSettings'); if (!row || !sourceSettingsButton || row.querySelector('.zone-settings-header')) return; const cell = document.createElement('th'); cell.className = 'zone-settings-header'; const headerButton = sourceSettingsButton.cloneNode(true); headerButton.id = 'zoneSettingsHeader'; headerButton.onclick = () => { const menu = $('#zoneSettingsMenu'); if (!menu) return; menu.hidden = !menu.hidden; sourceSettingsButton.setAttribute('aria-expanded', String(!menu.hidden)); }; cell.appendChild(headerButton); row.appendChild(cell); };
+    new MutationObserver(mountSettingsHeader).observe(zoneRoot, { childList: true, subtree: true });
+    mountSettingsHeader();
+    zoneRoot.dataset.settingsHeaderObserver = 'true';
+  }
+  const country = $('#country').value; const selectedId = $('#industrialZone').value; const selectedZone = zoneById(selectedId);
+  let records = pipelineRecordsForCurrentFilters();
+  const prefix = 'hydrogen-offtaker:zone-table:v1:'; const valid = new Set(zoneTableColumns.map((column) => column.key)); let order = []; let visibility = {}; let widths = {}; let pageSize = 10; let page = 1;
+  try { order = JSON.parse(localStorage.getItem(`${prefix}order`)) || []; visibility = JSON.parse(localStorage.getItem(`${prefix}visibility`)) || {}; widths = JSON.parse(localStorage.getItem(`${prefix}widths`)) || {}; pageSize = Number(localStorage.getItem(`${prefix}page-size`)) || 10; } catch { /* use defaults */ }
+  order = [...new Set(order.filter((key) => valid.has(key)))]; zoneTableColumns.forEach((column) => { if (!order.includes(column.key)) order.push(column.key); }); visibility = Object.fromEntries(zoneTableColumns.map((column) => [column.key, visibility[column.key] !== false])); widths = Object.fromEntries(zoneTableColumns.map((column) => { const value = Number(widths[column.key]); return [column.key, Number.isFinite(value) ? Math.min(column.maxWidth, Math.max(column.minWidth, value)) : column.defaultWidth]; })); if (!Object.values(visibility).some(Boolean)) visibility.company = true; if (![10, 25, 50].includes(pageSize)) pageSize = 10;
+  const save = () => { localStorage.setItem(`${prefix}order`, JSON.stringify(order)); localStorage.setItem(`${prefix}visibility`, JSON.stringify(visibility)); localStorage.setItem(`${prefix}widths`, JSON.stringify(widths)); localStorage.setItem(`${prefix}page-size`, String(pageSize)); };
+  const shown = () => order.map((key) => zoneTableColumns.find((column) => column.key === key)).filter((column) => column && visibility[column.key]);
+  const title = selectedZone ? `${selectedZone.label} — named industries` : `${country === 'PL' ? 'Poland' : country === 'DE' ? 'Germany' : 'Poland and Germany'} — all named industries`;
+  if (!records.length) { $('#zoneOccupants').innerHTML = `<p class="muted">No named industries have been captured for ${esc(title)} yet.</p>`; return; }
+  $('#zoneOccupants').innerHTML = `<div class="zone-table-heading"><h3>${esc(title)}</h3><div class="column-settings-wrap"><button class="secondary candidate-settings-button" id="zoneSettings" aria-label="Configure zone columns" title="Configure zone columns" aria-expanded="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2Zm9 3.6-2.1-.8a7.3 7.3 0 0 0-.7-1.7l.9-2.1-1.7.9a7.3 7.3 0 0 0-1.7-.7L12.8 4h-1.6l-.8 2.1a7.3 7.3 0 0 0-1.7.7l-2.1-.9-1.7 1.7.9 2.1a7.3 7.3 0 0 0-.7 1.7l-2.1.8V14l2.1.8c.2.6.4 1.2.7 1.7l-.9 2.1 1.7 1.7 2.1-.9c.5.3 1.1.6 1.7.7l.8 2.1h1.6l.8-2.1c.6-.2 1.2-.4 1.7-.7l2.1.9 1.7-1.7-.9-2.1c.3-.5.6-1.1.7-1.7l2.1-.8v-1.6Z"/></svg></button><div class="column-settings" id="zoneSettingsMenu" hidden><strong>Configure zone columns</strong><div id="zoneSettingsList"></div></div></div></div><div class="table-wrap candidate-table-wrap"><table class="zone-occupants-table"><colgroup id="zoneCols"></colgroup><thead id="zoneHead"></thead><tbody id="zoneBody"></tbody></table></div><div class="zone-table-pagination"><label>Rows per page<select id="zonePageSize"><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label><button class="secondary" id="zonePrev">Previous</button><span id="zonePageInfo" class="muted"></span><button class="secondary" id="zoneNext">Next</button></div>`;
+  const render = () => { const columns = shown(); const totalPages = Math.max(1, Math.ceil(records.length / pageSize)); page = Math.min(page, totalPages); const pageRecords = records.slice((page - 1) * pageSize, page * pageSize); $('#zoneCols').innerHTML = columns.map((column) => `<col data-zone-column="${column.key}" style="width:${widths[column.key]}px">`).join(''); $('#zoneHead').innerHTML = `<tr>${columns.map((column) => `<th draggable="true" data-zone-column="${column.key}" style="width:${widths[column.key]}px">${column.label}<span class="column-resize-handle" data-resize-key="${column.key}" title="Drag to resize ${column.label}" aria-label="Resize ${column.label}" role="separator"></span></th>`).join('')}</tr>`; $('#zoneBody').innerHTML = pageRecords.map(({ occupant, zone }) => `<tr>${columns.map((column) => `<td>${column.render(occupant, zone)}${column.key === 'company' && !selectedZone ? `<br><small class="muted">${esc(zone.label)}</small>` : ''}</td>`).join('')}</tr>`).join(''); $('#zonePageSize').value = String(pageSize); $('#zonePageInfo').textContent = `Page ${page} of ${totalPages} · ${records.length} records`; $('#zonePrev').disabled = page <= 1; $('#zoneNext').disabled = page >= totalPages; document.querySelectorAll('#zoneHead th').forEach((header) => { header.addEventListener('dragstart', (event) => { if (event.target.closest('.column-resize-handle')) { event.preventDefault(); return; } event.dataTransfer.setData('text/plain', header.dataset.zoneColumn); }); header.addEventListener('dragover', (event) => { event.preventDefault(); header.classList.add('column-drop-target'); }); header.addEventListener('dragleave', () => header.classList.remove('column-drop-target')); header.addEventListener('drop', (event) => { event.preventDefault(); header.classList.remove('column-drop-target'); const from = event.dataTransfer.getData('text/plain'); const to = header.dataset.zoneColumn; if (!from || from === to) return; order = order.filter((key) => key !== from); order.splice(order.indexOf(to), 0, from); save(); render(); renderSettings(); }); }); document.querySelectorAll('#zoneHead .column-resize-handle').forEach((handle) => handle.addEventListener('pointerdown', (event) => { event.preventDefault(); event.stopPropagation(); const key = handle.dataset.resizeKey; const column = zoneTableColumns.find((item) => item.key === key); const table = handle.closest('table'); const startX = event.clientX; const startWidth = widths[key]; let frame = 0; let active = true; const applyWidth = (clientX) => { widths[key] = Math.min(column.maxWidth, Math.max(column.minWidth, startWidth + clientX - startX)); const col = Array.from(table.querySelectorAll('col')).find((item) => item.dataset.zoneColumn === key); const header = table.querySelector(`th[data-zone-column="${key}"]`); if (col) col.style.width = `${widths[key]}px`; if (header) header.style.width = `${widths[key]}px`; }; const move = (moveEvent) => { if (!active) return; if (frame) cancelAnimationFrame(frame); frame = requestAnimationFrame(() => { applyWidth(moveEvent.clientX); frame = 0; }); }; const stop = () => { if (!active) return; active = false; if (frame) cancelAnimationFrame(frame); handle.releasePointerCapture?.(event.pointerId); handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', stop); handle.removeEventListener('pointercancel', stop); document.body.style.userSelect = ''; save(); }; handle.setPointerCapture?.(event.pointerId); document.body.style.userSelect = 'none'; handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', stop); handle.addEventListener('pointercancel', stop); })); };
+  const renderSettings = () => { $('#zoneSettingsList').innerHTML = order.map((key, index) => { const column = zoneTableColumns.find((item) => item.key === key); return `<div class="column-settings-row"><label><input type="checkbox" data-zone-visible="${key}" ${visibility[key] ? 'checked' : ''} ${key === 'company' ? 'disabled' : ''}> ${column.label}${key === 'company' ? ' <small>(required)</small>' : ''}</label><span><button class="column-move" data-zone-move="${key}" data-direction="left" ${index === 0 ? 'disabled' : ''}>←</button><button class="column-move" data-zone-move="${key}" data-direction="right" ${index === order.length - 1 ? 'disabled' : ''}>→</button></span></div>`; }).join(''); };
+  const menu = $('#zoneSettingsMenu'); $('#zoneSettings').onclick = () => { menu.hidden = !menu.hidden; $('#zoneSettings').setAttribute('aria-expanded', String(!menu.hidden)); }; $('#zoneSettingsList').addEventListener('change', (event) => { const key = event.target.dataset.zoneVisible; if (!key) return; visibility[key] = event.target.checked; save(); render(); renderSettings(); }); $('#zoneSettingsList').addEventListener('click', (event) => { const button = event.target.closest('[data-zone-move]'); if (!button) return; const index = order.indexOf(button.dataset.zoneMove); const target = button.dataset.direction === 'left' ? index - 1 : index + 1; if (target < 0 || target >= order.length) return; [order[index], order[target]] = [order[target], order[index]]; save(); render(); renderSettings(); }); $('#zonePageSize').onchange = () => { pageSize = Number($('#zonePageSize').value); page = 1; save(); render(); }; $('#zonePrev').onclick = () => { page -= 1; render(); }; $('#zoneNext').onclick = () => { page += 1; render(); }; $('#zoneOccupants').addEventListener('click', (event) => { const button = event.target.closest('[data-open-zone]'); if (!button) return; const zone = zoneById(button.dataset.openZone); const occupant = zone?.occupants?.find((item) => item.company === button.dataset.zoneCompany); if (zone && occupant) openHydrogenRecord(zoneRecord(zone, occupant)); }); $('#zoneBody').addEventListener('mouseover', (event) => { const cell = event.target.closest('td'); if (!cell) return; const fullText = cell.textContent.replace(/\s+/g, ' ').trim(); if (fullText) cell.title = fullText; }); renderSettings(); render();
+}
+renderZoneOccupants = renderZoneOccupantsPaginated;
+
+function renderZoneOccupantsEnhanced() {
+  if (!$('#zoneOccupants')) return;
+  const records = pipelineRecordsForCurrentFilters();
+  $('#zoneOccupants').innerHTML = `<div class="table-wrap candidate-table-wrap"><table class="zone-occupants-table"></table></div>`;
+  const columns = zoneTableColumns.map((column) => ({ id: column.key, header: column.label, defaultWidth: column.defaultWidth, minWidth: column.minWidth || 96, sortType: column.key === 'jevScore' ? 'number' : column.key === 'website' || column.key === 'linkedin' ? 'presence' : 'string', accessor: ({ occupant, zone }) => { if (column.key === 'company') return occupant.company; if (column.key === 'industry') return occupant.industry; if (column.key === 'website') return occupant.websiteUrl; if (column.key === 'linkedin') return occupant.linkedinUrl; if (column.key === 'status') return occupant.status; if (column.key === 'jevScore') return latestJev(zone.id, occupant.company)?.jevScore; return column.key === 'jev' ? latestJev(zone.id, occupant.company)?.jevChoice : ''; }, cell: ({ occupant, zone }) => column.render(occupant, zone) }));
+  enhanceTable({ tableEl: $('.zone-occupants-table'), tableId: 'offtaker-zone-results', columns, getRows: () => records, getRowId: ({ occupant, zone }) => `${zone.id}-${occupant.company}`, defaultSort: null, bulkActions: [{ id: 'export', label: 'Export selected (CSV)', onClick: (rows) => download('hydrogen-zone-results-selected.csv', exportZoneCsv(rows)) }], onRowClick: (id) => { const record = records.find(({ occupant, zone }) => `${zone.id}-${occupant.company}` === String(id)); if (record) openHydrogenRecord(zoneRecord(record.zone, record.occupant)); } });
+}
+renderZoneOccupants = renderZoneOccupantsEnhanced;
+/*
+
+function currentZoneExportRecords() { const country = $('#country')?.value; const selectedZone = zoneById($('#industrialZone')?.value); let records = selectedZone ? (selectedZone.occupants || []).map((occupant) => ({ occupant, zone: selectedZone })) : zonesForCountry(country).flatMap((zone) => (zone.occupants || []).map((occupant) => ({ occupant, zone }))); const terms = hydrogenSectorTerms[$('#sector']?.value] || []; return terms.length ? records.filter(({ occupant, zone }) => terms.some((term) => `${occupant.company} ${occupant.industry} ${zone.label}`.toLowerCase().includes(term))) : records; }
+*/
+function currentZoneExportRecords() { return pipelineRecordsForCurrentFilters(); }
+function ensureZoneExportButton() { const button = $('#exportZoneCsv'); if (!button || button.dataset.bound) return; button.dataset.bound = 'true'; button.title = 'Export the current filtered table data as CSV'; button.addEventListener('click', () => { const country = $('#country')?.value || 'data'; const zone = $('#industrialZone')?.value || 'all-zones'; download(`hydrogen-${country}-${zone}.csv`, exportZoneCsv(currentZoneExportRecords())); }); }
+new MutationObserver(ensureZoneExportButton).observe(document.body, { childList: true, subtree: true });
+
+function renderSearch() {
+  $('#search').innerHTML = `
+    <section class="panel search-controls-panel">
+      <div class="hydrogen-search-grid"><input id="country" type="hidden" value="" aria-hidden="true"><label><select id="sector" aria-label="Sector"><option value="">All sectors</option>${hydrogenSectorOrder.map((sector) => `<option value="${esc(sector)}">${esc(sector)}</option>`).join('')}</select></label><label class="search-zone-field"><select id="industrialZone" aria-label="Industrial zone">${industrialZoneOptionsMarkup('')}</select></label></div>
+      <input id="query" type="hidden" aria-hidden="true">
+      <div id="searchNotice"></div>
+    </section>
+    <section class="panel zone-results-panel"><div id="zoneOccupants" class="zone-occupants"></div></section>
+    `;
+  renderZoneOccupants();
+  $('#query').value = buildSectorQuery();
+  $('#country').addEventListener('change', () => { renderIndustrialZoneOptions($('#country').value); renderZoneOccupants(); $('#query').value = buildSectorQuery(); });
+  ['language','sector','hydrogenSignalFilter'].forEach((id) => $('#' + id)?.addEventListener('change', () => { $('#query').value = buildSectorQuery(); }));
+  $('#industrialZone').addEventListener('change', () => { renderZoneOccupants(); $('#query').value = buildSectorQuery(); });
+  $('#results')?.addEventListener('click', (event) => { const openButton = event.target.closest('.open-search-result'); if (openButton) { const result = searchResults[Number(openButton.dataset.index)]; if (result) openHydrogenRecord({ ...result, candidateId: `search-${Number(openButton.dataset.index)}-${result.searchResultId || result.url}`, company: result.company || result.title, plantSiteName: result.plantSiteName || result.title, primaryClassification: result.classification || 'Search result for review', researchStatus: 'needs_source_verification', evidence: result.evidence || [{ evidenceType: 'Search result', summary: result.snippet || 'Search result requires source review.', sourceUrl: result.url, verificationStatus: 'Needs review' }], sourceUrls: [result.url].filter(Boolean) }); return; } const saveButton = event.target.closest('.save-result'); if (saveButton) saveResult(Number(saveButton.dataset.index)); });
+}
+function renderReview() {
+  const needsVerification = candidates.filter((candidate) => candidate.researchStatus === 'needs_source_verification');
+  $('#review').innerHTML = `<div class="grid"><div class="card"><span class="eyebrow">SOURCE VERIFICATION</span><strong style="font-size:28px;display:block;margin-top:10px">${needsVerification.length}</strong><small>Saved live results awaiting source review</small></div><div class="card"><span class="eyebrow">SAVED</span><strong style="font-size:28px;display:block;margin-top:10px">${candidates.length}</strong><small>Candidate records</small></div></div><div class="panel"><h2>Review policy</h2><p>Saved results are unverified leads. Confirm company, plant, process, fuel use, hydrogen fit, and source quality before changing classification.</p></div>`;
+}
+function resolveHydrogenRecord(candidateId) {
+  const saved = candidates.find((candidate) => candidate.candidateId === candidateId);
+  if (saved) return saved;
+  for (const country of ['PL', 'DE']) {
+    for (const zone of zonesForCountry(country)) {
+      const occupant = (zone.occupants || []).find((item) => zoneRecord(zone, item).candidateId === candidateId);
+      if (occupant) return zoneRecord(zone, occupant);
+    }
+  }
+  return null;
+}
+function render() {
+  renderOverview(); renderCandidatesEnhanced(); renderSearch(); syncHydrogenFilterOptions(); renderReview(); $('#candidateCount').textContent = candidates.length;
+  if ($('#sector') && !$('#sector option[value=""]')) $('#sector').insertAdjacentHTML('afterbegin', '<option value="">All sectors</option>');
+  const state = readUiState(); const searchState = state.search || {};
+  if (searchState.provider && $('#provider')) $('#provider').value = searchState.provider;
+  if (searchState.language && $('#language')) $('#language').value = searchState.language;
+  if (searchState.country && $('#country')) $('#country').value = searchState.country;
+  if ($('#hydrogenCountryFilter') && searchState.country) $('#hydrogenCountryFilter').value = searchState.country === 'DE' ? 'Germany' : 'Poland';
+  if (searchState.sector && $('#sector')) $('#sector').value = searchState.sector;
+  if (searchState.signal && $('#hydrogenSignalFilter')) $('#hydrogenSignalFilter').value = searchState.signal;
+  syncHydrogenSidebarCountry(); renderHydrogenSidebar(); if ($('#country')) renderIndustrialZoneOptions($('#country').value, searchState.industrialZone || '');
+  ensurePipelineVisible(); if ($('#industrialZone')) renderZoneOccupants(); updateSectorCounts(); updateHydrogenPipelineCount();
+  if ($('#query')) $('#query').value = searchState.query || buildSectorQuery();
+  selectedCandidateId = state.selectedCandidateId || selectedCandidateId; const activeView = locationView(state); if (activeView === 'candidate-detail') { selectedCandidateRecord = resolveHydrogenRecord(selectedCandidateId) || selectedCandidateRecord; renderCandidateDetail(); } setHydrogenView(activeView); updateHydrogenPipelineCount();
+}
+document.querySelectorAll('.tab').forEach((button) => button.onclick = () => setHydrogenView(button.dataset.view, { historyMode: 'push' }));
+document.querySelectorAll('[data-view-link]').forEach((link) => link.addEventListener('click', (event) => { event.preventDefault(); const view = link.dataset.viewLink; setHydrogenView(view, { historyMode: 'push' }); }));
+document.getElementById('hydrogenProjectSearch')?.addEventListener('input', renderHydrogenSidebar);
+document.getElementById('hydrogenSignalFilter')?.addEventListener('change', () => { if ($('#query')) $('#query').value = buildSectorQuery(); saveSearchUiState(); renderZoneOccupants(); renderHydrogenSidebar(); updateSectorCounts(); updateHydrogenPipelineCount(); });
+document.getElementById('hydrogenCountryFilter')?.addEventListener('change', () => {
+  const selectedCountry = $('#hydrogenCountryFilter').value;
+  if ($('#country')) {
+    $('#country').value = selectedCountry === 'Germany' ? 'DE' : selectedCountry === 'Poland' ? 'PL' : '';
+    syncHydrogenSidebarCountry();
+    renderIndustrialZoneOptions($('#country').value);
+    renderZoneOccupants();
+    $('#query').value = buildSectorQuery();
+    saveSearchUiState();
+    updateSectorCounts();
+  }
+  renderHydrogenSidebar();
+});
+window.addEventListener('popstate', () => { const view = locationView(readUiState()); if (view === 'candidate-detail') { selectedCandidateRecord = resolveHydrogenRecord(selectedCandidateId) || selectedCandidateRecord; renderCandidateDetail(); } setHydrogenView(view, { historyMode: 'none' }); });
+window.addEventListener('hashchange', () => { const view = locationView(readUiState()); if (view === 'candidate-detail') { selectedCandidateRecord = resolveHydrogenRecord(selectedCandidateId) || selectedCandidateRecord; renderCandidateDetail(); } setHydrogenView(view, { historyMode: 'none' }); });
+function persistVisibleHydrogenView() { const visible = document.querySelector('.view:not(.hidden)')?.id; if (visible) writeUiState({ activeView: visible }); }
+const initialHydrogenView = locationView(readUiState()); document.querySelectorAll('.view').forEach((view) => view.classList.toggle('hidden', view.id !== initialHydrogenView)); document.querySelectorAll('.tab').forEach((button) => button.classList.toggle('active', button.dataset.view === initialHydrogenView));
+window.addEventListener('pagehide', persistVisibleHydrogenView); window.addEventListener('beforeunload', persistVisibleHydrogenView);
+document.addEventListener('change', (event) => { if (event.target.closest('#search')) { saveSearchUiState(); if (['sector'].includes(event.target.id)) renderZoneOccupants(); if (['country','industrialZone','sector'].includes(event.target.id)) { updateSectorCounts(); updateHydrogenPipelineCount(); renderHydrogenSidebar(); } } });
+document.addEventListener('input', (event) => { if (event.target.closest('#search') && event.target.id === 'query') saveSearchUiState(); });
+fetch('/api/hydrogen/bootstrap').then((response) => response.json()).then((data) => { candidates = data.candidates || []; searchHistory = data.searchResults || []; jevScreenings = data.jevScreenings || []; toast(data.notice || 'Live mode ready.'); try { render(); } finally { setTimeout(() => { try { renderHydrogenSidebarStable(); } catch (error) { console.error('Hydrogen stable sidebar failed', error); const target = $('#hydrogenProjects'); if (target) target.innerHTML = '<div class="empty">Unable to load company list.</div>'; } }, 0); } }).catch(() => toast('Could not load the live research store.'));
+

@@ -1,0 +1,54 @@
+{
+  "contacts": [
+    {
+      "company": "Abo International Group / ABOGLOBE INTERNATIONAL INC",
+      "name": "Dr. Li Zhong",
+      "role": "CEO",
+      "email": "DRLI@ABOGLOBE.COM",
+      "phone": "+1-778-927-1147 / +1-778-928-1177",
+      "country": "Canada",
+      "notes": "Lead from company contact page / Perplexity; verify procurement role.",
+      "source": "http://abotaichi.com/contact/"
+    },
+    {
+      "company": "New Asma Limited",
+      "name": "Miss Eling Ho",
+      "role": "Agent contact",
+      "email": "Unavailable",
+      "phone": "+852 9755 8056 (WhatsApp)",
+      "country": "Hong Kong",
+      "notes": "Third-party agent listing; not verified as EN590 desk.",
+      "source": "https://agricoariztia-ltda.com/"
+    },
+    {
+      "company": "Bangladesh Petroleum Corporation",
+      "name": "Mohammad Zahid Hossain",
+      "role": "General Manager, Commercial & Operations",
+      "email": "gm_commercial@bpc.gov.bd",
+      "phone": "+880 1713755377 / +880 1829589366",
+      "country": "Bangladesh",
+      "notes": "Official procurement contact cited in BPPA material.",
+      "source": "https://www.bppa.gov.bd/advertisement-goods/details-98126.html"
+    },
+    {
+      "company": "Hamgug Imc",
+      "name": "Mr. Eui Young Chang",
+      "role": "Named buyer contact",
+      "email": "Unavailable",
+      "phone": "Unavailable",
+      "country": "South Korea",
+      "notes": "Marketplace contact; email and phone gated/unavailable.",
+      "source": "https://www.globalbuyersonline.com/tradeleads/details.asp?xpyr=1130829"
+    },
+    {
+      "company": "Krapivstev Capital",
+      "name": "Ogtay Sadikhov",
+      "role": "Named contact in separate LPG listing",
+      "email": "Unavailable",
+      "phone": "Gated",
+      "country": "Spain",
+      "notes": "Not EN590 evidence; do not treat as verified EN590 procurement contact.",
+      "source": "https://www.tradewheel.com/buyers/long-term-purchase-inquiry-for-30000-mt-en590-diesel/999966/"
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "market": "Global",
+  "companies": [
+    {
+      "type": "Trading house / buyer RFQ",
+      "batch": "50,000 MT",
+      "notes": "2026 demand: 7 July buyer listing seeks EN590 10 ppm, 50,000 MT for China, CIF or FOB; listed as actively seeking quotes. Its own website describes commodity trading, including EN590. Marketplace verification does not establish a funded principal purchase or award; confirm authority and bank instrument.",
+      "company": "Abo International Group Ltd.",
+      "country": "Canada",
+      "sources": [
+        "https://eximnext.com/buy-lead/diesel-en590-10ppm-canada-1783430789-13",
+        "https://abotaichi.com/home-page/"
+      ],
+      "website": "https://abotaichi.com/home-page/",
+      "linkedin_company_page": ""
+    },
+    {
+      "type": "Trading house / importer-side sourcer",
+      "batch": "50,000 MT/month",
+      "notes": "2026 demand: 9 June buyer listing requests EN590 10 ppm, 50,000 MT monthly for China, allowing CIF, FOB or TTO; status listed as actively seeking quotes. A separate company profile says it sources overseas goods for Chinese buyers, not that it buys this cargo on its own account. Principal mandate and financing remain unverified; no petroleum-specific company website verified.",
+      "company": "New Asma Limited",
+      "country": "Hong Kong",
+      "sources": [
+        "https://eximnext.com/buy-lead/diesel-en590-10ppm-hong-kong-1781000532-28",
+        "https://metalandsteel.com/Directory/Details/Name/new-asma-limited/ItemID/18453"
+      ],
+      "website": "",
+      "linkedin_company_page": ""
+    },
+    {
+      "type": "Buyer-posted importer RFQ",
+      "batch": "50,000 MT trial",
+      "notes": "2026 demand: 22 August RFQ seeks EN590 10 ppm, 50,000 MT trial per month CIF Rotterdam; proposes 100,000 MT/month later. Status: posted request, not an awarded tender. Identity and principal status unverified: a separate EUROGAS LLC seller listing gives a French location, with no established link to the Dutch poster.",
+      "company": "EUROGAS LLC",
+      "country": "Netherlands",
+      "sources": [
+        "https://www.tradewheel.com/buyers/importing-en590-10-ppm-diesel-need-quotes/1006810/",
+        "https://www.exporthub.com/eurogas-10595702/"
+      ],
+      "website": "",
+      "linkedin_company_page": ""
+    },
+    {
+      "type": "Self-declared buyer in LOI",
+      "batch": "30,000 MT/shipment",
+      "notes": "2026 demand: LOI dated 24 July and posted 25 July requests EN590 diesel, 10 ppm sulfur, 30,000 MT every 15 days CIF Izmir or Gebze, Turkey. Status: stated intention/request for seller offer, not a signed supply agreement. Spain is the poster location; corporate registration, buyer mandate and financing were not independently established.",
+      "company": "Krapivstev Capital",
+      "country": "Spain",
+      "sources": [
+        "https://www.tradewheel.com/buyers/long-term-purchase-inquiry-for-30000-mt-en590-diesel/999966/"
+      ],
+      "website": "",
+      "linkedin_company_page": ""
+    },
+    {
+      "type": "Trading house / buyer RFQ",
+      "batch": "50,000 MT/month",
+      "notes": "2026 demand: RFQ posted 1 June says “looking for Diesel / EN590 10 ppm”, 50,000 MT × 12 months CIF Ulsan; requests a seller offer before sending LOI. Status: unawarded buyer request. The same text also claims an ability to supply diesel, so own-account buying and corporate identity need independent verification.",
+      "company": "Hamgug Imc",
+      "country": "South Korea",
+      "sources": [
+        "https://importer.tradekey.com/buyoffer/Petroleum-Supplier-3366855.html"
+      ],
+      "website": "",
+      "linkedin_company_page": ""
+    },
+    {
+      "type": "State-owned petroleum importer / procuring entity",
+      "batch": "100,000 MT events; separate 25,000–50,000 MT gasoil tender",
+      "notes": "2026 government procurement reporting documents EN590-10 ppm direct imports and identifies Bangladesh Petroleum Corporation as the procuring entity. The separate 25,000–50,000 MT official tender specified approximately 50 ppm gasoil and closed on 3 September 2026. The EN590 purchases were approved direct procurement, not confirmed open RFQs; current open status is not confirmed.",
+      "company": "Bangladesh Petroleum Corporation",
+      "country": "Bangladesh",
+      "sources": [
+        "https://www.bpc.gov.bd",
+        "https://www.bppa.gov.bd/advertisement-goods/details-98126.html",
+        "https://online.thedailystar.net/business/news/govt-approves-import-26-lakh-more-tonnes-fuel-4140061",
+        "https://en.bd-pratidin.com/national/2026/03/27/59590",
+        "https://en.samakal.com/bangladesh/170848861/proposal-to-import-another--tonnes-of-diesel-approved",
+        "https://www.tbsnews.net/bangladesh/energy/fuel-supply-accelerate-as-tender-time-cut-from-42-to-10-days-1417831"
+      ],
+      "website": "https://www.bpc.gov.bd",
+      "linkedin_company_page": ""
+    }
+  ]
+}
