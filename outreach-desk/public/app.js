@@ -3,6 +3,8 @@ import {workspacePage} from './workspace.js';
 import {projectPage} from './project.js';
 import {leadPage,newProjectPage,findPage,importPage,leadFields,personFields} from './flow.js';
 import {parseCsv,parseWorkbook} from './spreadsheet.js';
+import {createTable} from './composeTable.js';
+import {gridPickerHtml,mountTableEditor} from './composeTableUI.js';
 
 const app=document.querySelector('#app'),dialog=document.querySelector('#dialog'),toast=document.querySelector('#toast');
 let state,authenticated=false,webSearch=false,jevAvailable=false,firecrawlAvailable=false,perplexityAvailable=false,limaAvailable=false,ui={},menu='',busy=false,noticeTimer;
@@ -171,6 +173,16 @@ function openDialog(kind,info={}){
 const hidden=(name,value)=>'<input type="hidden" name="'+e(name)+'" value="'+e(value)+'">';
 const values=form=>Object.fromEntries(new FormData(form));
 const isChecked=(data,key)=>data[key]!=null;
+let draftFormForTable=null;
+function insertTableIntoDraft(html){
+ const form=draftFormForTable;
+ if(!form||!form.elements.body){notify('Open an Email draft first.',true);return;}
+ const body=form.elements.body;
+ body.value=(body.value?body.value+'\n\n':'')+html;
+ body.dispatchEvent(new Event('input',{bubbles:true}));
+ dialog.close();
+ notify('Table inserted into the message.');
+}
 function targetDraft(data){
  const p=route().p,t=ui.targetDraft||p.targeting;
  return {...t,website:data.website,offer:data.offer,ideal:data.ideal,guidelines:data.guidelines,signals:[...t.signals],roles:[...t.roles]};
@@ -337,7 +349,20 @@ async function onClick(event){
   form.elements.body.dispatchEvent(new Event('input',{bubbles:true}));
   return;
  }
- if(type==='find-example'){findDraft().query=d.value;render();return;}
+  if(type==='table-insert'){
+   draftFormForTable=button.closest('form');
+   dialog.innerHTML='<div class="dialog-head"><h2>Insert table</h2>'+btn('Close','close-dialog','subtle')+'</div>'+gridPickerHtml();
+   if(!dialog.open)dialog.showModal();
+   return;
+  }
+  if(type==='table-create'||type==='table-create-custom'){
+   const rows=type==='table-create'?Number(d.rows):Number(dialog.querySelector('.ct-custom-rows')?.value||3);
+   const cols=type==='table-create'?Number(d.cols):Number(dialog.querySelector('.ct-custom-cols')?.value||3);
+   dialog.innerHTML='<div class="dialog-head"><h2>Table editor</h2>'+btn('Close','close-dialog','subtle')+'</div><div class="ct-host"></div>';
+   mountTableEditor(dialog.querySelector('.ct-host'),{model:createTable(rows,cols),onInsert:insertTableIntoDraft});
+   return;
+  }
+  if(type==='find-example'){findDraft().query=d.value;render();return;}
  if(type==='find-back'){const f=findDraft();f.step=Math.max(0,f.step-1);render();return;}
  if(type==='import-open'){
   invalidateImport();ui.importOpen=true;ui.importFile=null;ui.importPaste='';render();return;

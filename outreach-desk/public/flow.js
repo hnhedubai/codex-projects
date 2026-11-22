@@ -70,7 +70,7 @@ export function leadPage(ws,p,l,tab,ui,{jevAvailable,firecrawlAvailable,perplexi
   const ch=ui.draftChannel||'LinkedIn',d=ui.draftEdits?.[ch]||l.drafts[ch]||{subject:'',body:''};
   content=card('Drafts','<div class="filters">'+segment(['Email','LinkedIn','Instagram'],ch,'draft-channel')+'</div>'+
    form('draft','<input type="hidden" name="channel" value="'+e(ch)+'">'+(ch==='Email'?field('Subject','subject',d.subject):'')+area('Message','body',d.body)+
-   '<div class="flex">'+btn('Start from template','draft-template','',{'data-channel':ch})+btn('Copy message','draft-copy')+'</div>','Save draft'));
+    '<div class="flex">'+btn('Start from template','draft-template','',{'data-channel':ch})+(ch==='Email'?btn('Insert table','table-insert'):'')+btn('Copy message','draft-copy')+'</div>','Save draft'));
  }
  if(tab==='enrichment'){
   const rows=p.enrichments.filter(x=>x.leadId===l.id);
