@@ -3,7 +3,7 @@ import {workspacePage} from './workspace.js';
 import {projectPage} from './project.js';
 import {leadPage,newProjectPage,findPage,importPage,leadFields,personFields} from './flow.js';
 import {parseCsv,parseWorkbook} from './spreadsheet.js';
-import {createTable,buildHtml,SETTINGS_ATTR} from './composeTable.js';
+import {createTable,buildHtml,SETTINGS_ATTR,stripSettings} from './composeTable.js';
 import {gridPickerHtml,mountTableEditor} from './composeTableUI.js';
 import {clipboardToTableHtml,recalcTable,readTableFromDom,replaceTableDom,moveTableElement,deleteTableElement,showBar} from './composeTableMessage.js';
 
@@ -348,11 +348,19 @@ async function onClick(event){
   const start=i>=0?i:Math.max(0,rows.findIndex(x=>!worked(x)));
   ui.agentId=rows[(start+1)%rows.length]?.id;render();return;
  }
- if(type==='copy'||type==='draft-copy'){
-  const text=type==='copy'?d.text:button.closest('form')?.elements.body?.value;
-  if(!text){notify('There is no draft to copy.',true);return;}
-  try{await navigator.clipboard.writeText(text);notify('Copied.');}catch{notify('Select the draft text and copy it manually.',true);}return;
- }
+  if(type==='copy'||type==='draft-copy'){
+   const form=button.closest('form');
+   const raw=type==='copy'?d.text:form?.elements.body?.value;
+   if(!raw){notify('There is no draft to copy.',true);return;}
+   const html=stripSettings(raw);
+   const plain=form?.querySelector('.ct-body')?.innerText??raw.replace(/<[^>]+>/g,'');
+   try{
+    if(navigator.clipboard.write&&/<[a-z]/i.test(html))await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([plain],{type:'text/plain'})})]);
+    else await navigator.clipboard.writeText(plain);
+    notify('Copied.');
+   }catch{notify('Select the draft text and copy it manually.',true);}
+   return;
+  }
  if(type==='draft-template'){
   const form=button.closest('form'),contact=l.contacts[0]?.name.split(' ')[0]||'there';
   const offer=p.targeting.offer||'a potential renewable energy partnership';
