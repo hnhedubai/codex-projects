@@ -85,3 +85,26 @@ test('reducer to buildHtml produces email-safe output for a driven model', () =>
   assert.match(html, /border-collapse:collapse/);
   assert.ok(html.includes('Q1') && html.includes('100'));
 });
+
+test('applyAction row/col props, colWidth and outerBorder mutate the model', () => {
+  const t = createTable(3, 3);
+  applyAction(t, { type: 'rowProp', at: 1, props: { bg: '#abcdef' } });
+  assert.equal(t.cells[1][0].bg, '#abcdef');
+  applyAction(t, { type: 'colProp', at: 2, props: { align: 'center' } });
+  assert.equal(t.cells[0][2].align, 'center');
+  applyAction(t, { type: 'colWidth', at: 0, value: 50 });
+  assert.equal(t.colWidths.reduce((a, b) => a + b, 0), 100);
+  applyAction(t, { type: 'outerBorder', value: { color: '#123456', style: 'dashed' } });
+  assert.equal(t.settings.border.outer.color, '#123456');
+  assert.equal(t.settings.border.outer.style, 'dashed');
+});
+
+test('toolbarHtml exposes the design controls', () => {
+  const html = toolbarHtml(createTable(2, 2));
+  assert.match(html, /data-action="table-color" data-key="color"/);
+  assert.match(html, /data-action="table-color" data-key="bg"/);
+  assert.match(html, /data-action="table-fill" data-scope="row"/);
+  assert.match(html, /data-action="table-colwidth"/);
+  assert.match(html, /data-action="table-border-style"/);
+  assert.match(html, /data-action="table-border-color"/);
+});

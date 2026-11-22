@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   MAX_ROWS, MAX_COLS, SETTINGS_ATTR, createTable, applyPreset,
   addRow, removeRow, addCol, removeCol, moveRow, moveCol,
-  mergeCells, splitCell, setCell, tsvToTable, tableToTsv,
+  mergeCells, splitCell, setCell, setRowProp, setColProp, setColWidth, setOuterBorder, tsvToTable, tableToTsv,
   encodeSettings, decodeSettings, buildHtml, stripSettings, sizeWarning, escapeHtml,
 } from '../public/composeTable.js';
 
@@ -159,4 +159,47 @@ test('applyPreset returns a valid sanitised settings object for each preset', ()
     assert.ok(!s.border.outer.color || /^#[0-9a-f]{3,6}$/.test(s.border.outer.color));
   }
   assert.equal(applyPreset('nonsense').preset, 'Grid'); // falls back
+});
+
+test('setColWidth sets one column and renormalises the rest to 100', () => {
+  const t = createTable(2, 4); // 25 each
+  setColWidth(t, 0, 55);
+  assert.equal(t.colWidths[0], 55);
+  assert.equal(t.colWidths.reduce((a, b) => a + b, 0), 100);
+});
+
+test('setOuterBorder partial update keeps the other fields', () => {
+  const t = createTable(2, 2, { preset: 'Grid' });
+  const before = { ...t.settings.border.outer };
+  setOuterBorder(t, { color: '#ff0000' });
+  assert.equal(t.settings.border.outer.color, '#ff0000');
+  assert.equal(t.settings.border.outer.style, before.style);
+  assert.equal(t.settings.border.outer.width, before.width);
+  setOuterBorder(t, { color: 'javascript:alert(1)' }); // rejected, keeps previous
+  assert.equal(t.settings.border.outer.color, '#ff0000');
+});
+
+test('setRowProp / setColProp apply to every cell in the line', () => {
+  const t = createTable(3, 3);
+  setRowProp(t, 1, { bg: '#eeeeee' });
+  assert.deepEqual([0, 1, 2].map((c) => t.cells[1][c].bg), ['#eeeeee', '#eeeeee', '#eeeeee']);
+  setColProp(t, 2, { align: 'right' });
+  assert.deepEqual([0, 1, 2].map((r) => t.cells[r][2].align), ['right', 'right', 'right']);
+});
+
+test('buildHtml applies per-column widths on the first row', () => {
+  const t = createTable(2, 2);
+  setColWidth(t, 0, 70);
+  const html = buildHtml(t);
+  assert.match(html, /width="70%"/);
+  assert.match(html, /width="30%"/);
+});
+
+test('buildHtml renders the totals row with emphasis', () => {
+  const t = createTable(3, 2);
+  t.totalsRow = true;
+  const html = buildHtml(t);
+  // last row cells get bold + a heavier top border (headerUnder style)
+  assert.match(html, /border-top:2px solid #999999/);
+  assert.match(html, /font-weight:bold/);
 });

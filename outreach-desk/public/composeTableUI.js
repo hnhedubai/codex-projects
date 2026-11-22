@@ -1,9 +1,10 @@
 // Compose-table editor UI (Phase 3). Pure builders + reducer are framework-free
 // and unit-tested; mountTableEditor wires the live dialog (browser only).
 import {
-  createTable, buildHtml, setCell, addRow, removeRow, addCol, removeCol,
+  createTable, buildHtml, setCell, setRowProp, setColProp, setColWidth, setOuterBorder,
+  addRow, removeRow, addCol, removeCol,
   moveRow, moveCol, mergeCells, splitCell, applyPreset,
-  MAX_ROWS, MAX_COLS, PRESETS, SAFE_FONTS, ALIGNMENTS, VALIGNMENTS, escapeHtml,
+  MAX_ROWS, MAX_COLS, PRESETS, SAFE_FONTS, ALIGNMENTS, VALIGNMENTS, BORDER_STYLES, escapeHtml,
 } from './composeTable.js';
 
 const e = escapeHtml;
@@ -29,6 +30,10 @@ export function applyAction(t, a = {}) {
     case 'cell': setCell(t, a.r, a.c, a.props); break;
     case 'font': t.settings.font = { family: SAFE_FONTS.includes(a.value.family) ? a.value.family : t.settings.font.family, size: Math.min(20, Math.max(11, Number(a.value.size) || 14)) }; break;
     case 'layout': t.settings.layout = { ...t.settings.layout, ...a.value }; break;
+    case 'rowProp': setRowProp(t, a.at, a.props); break;
+    case 'colProp': setColProp(t, a.at, a.props); break;
+    case 'colWidth': setColWidth(t, a.at, a.value); break;
+    case 'outerBorder': setOuterBorder(t, a.value); break;
     default: break;
   }
   return t;
@@ -66,6 +71,16 @@ export function toolbarHtml(t) {
     `<button type="button" class="btn subtle" data-action="table-add" data-what="col">+ Col</button><button type="button" class="btn subtle" data-action="table-remove" data-what="col">− Col</button></div>` +
     `<div class="ct-group"><button type="button" class="btn subtle" data-action="table-move" data-what="row-up">↑ Row</button><button type="button" class="btn subtle" data-action="table-move" data-what="row-down">↓ Row</button>` +
     `<button type="button" class="btn subtle" data-action="table-move" data-what="col-left">← Col</button><button type="button" class="btn subtle" data-action="table-move" data-what="col-right">→ Col</button></div>` +
+    `<div class="ct-group ct-design">` +
+    `<label>Text<input type="color" data-action="table-color" data-key="color" value="#000000"></label>` +
+    `<label>Fill<input type="color" data-action="table-color" data-key="bg" value="#ffffff"></label>` +
+    `<button type="button" class="btn subtle" data-action="table-fill" data-scope="row">Fill row</button>` +
+    `<button type="button" class="btn subtle" data-action="table-fill" data-scope="col">Fill column</button>` +
+    `<label>Col %<input type="number" class="ct-colwidth" data-action="table-colwidth" min="1" max="100" value="25" aria-label="Selected column width percent"></label>` +
+    `<label>Border<select data-action="table-border-style">${opt(BORDER_STYLES, s.border.outer.style)}</select></label>` +
+    `<label>W<input type="number" class="ct-border-width" data-action="table-border-width" min="0" max="12" value="${s.border.outer.width}" aria-label="Outer border width"></label>` +
+    `<input type="color" class="ct-border-color" data-action="table-border-color" value="${s.border.outer.color || '#999999'}" aria-label="Outer border colour">` +
+    `</div>` +
     `<button type="button" class="btn primary" data-action="table-commit">Insert table</button>` +
     `</div>`;
 }
@@ -124,6 +139,7 @@ export function mountTableEditor(host, { model, onInsert } = {}) {
         paint(); break;
       }
       case 'table-commit': if (onInsert) onInsert(buildHtml(state.model)); break;
+      case 'table-fill': { const s = sel(); const bg = host.querySelector('input[data-key="bg"]')?.value || '#ffffff'; applyAction(state.model, { type: a.scope === 'row' ? 'rowProp' : 'colProp', at: a.scope === 'row' ? s.r1 : s.c1, props: { bg } }); paint(); break; }
       default: break;
     }
   });
@@ -135,6 +151,11 @@ export function mountTableEditor(host, { model, onInsert } = {}) {
     else if (a.action === 'table-font-size') applyAction(state.model, { type: 'font', value: { family: state.model.settings.font.family, size: Number(el.value) } });
     else if (a.action === 'table-layout-width') applyAction(state.model, { type: 'layout', value: { width: el.value } });
     else if (a.action === 'table-align') { const s = sel(); applyAction(state.model, { type: 'cell', r: s.r1, c: s.c1, props: { align: el.value } }); }
+    else if (a.action === 'table-color') { const s = sel(); applyAction(state.model, { type: 'cell', r: s.r1, c: s.c1, props: { [a.key]: el.value } }); }
+    else if (a.action === 'table-colwidth') { const s = sel(); applyAction(state.model, { type: 'colWidth', at: s.c1, value: Number(el.value) }); }
+    else if (a.action === 'table-border-style') applyAction(state.model, { type: 'outerBorder', value: { style: el.value } });
+    else if (a.action === 'table-border-width') applyAction(state.model, { type: 'outerBorder', value: { width: Number(el.value) } });
+    else if (a.action === 'table-border-color') applyAction(state.model, { type: 'outerBorder', value: { color: el.value } });
     paint();
   });
   return { get model() { return state.model; }, paint };

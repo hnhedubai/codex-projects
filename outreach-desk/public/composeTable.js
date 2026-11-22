@@ -175,6 +175,30 @@ export function setCell(t, r, c, props = {}) {
   return true;
 }
 
+// Apply a style/text prop to every cell in a row or column (row/column design).
+export function setRowProp(t, r, props) { r = clampInt(r, 0, t.rows - 1); for (let c = 0; c < t.cols; c++) setCell(t, r, c, props); return true; }
+export function setColProp(t, c, props) { c = clampInt(c, 0, t.cols - 1); for (let r = 0; r < t.rows; r++) setCell(t, r, c, props); return true; }
+
+// Set one column's width (%) and renormalise the rest so the total stays 100.
+export function setColWidth(t, c, pct) {
+  c = clampInt(c, 0, t.cols - 1);
+  t.colWidths[c] = clampInt(pct, 1, 100);
+  const others = []; for (let i = 0; i < t.cols; i++) if (i !== c) others.push(i);
+  if (!others.length) { t.colWidths[c] = 100; return true; }
+  const remaining = 100 - t.colWidths[c];
+  const each = Math.max(1, Math.floor(remaining / others.length));
+  others.forEach((i) => { t.colWidths[i] = each; });
+  t.colWidths[others[others.length - 1]] += 100 - t.colWidths.reduce((a, b) => a + b, 0); // absorb rounding drift
+  return true;
+}
+
+// Customise the outer border (email-safe, sanitised values only).
+export function setOuterBorder(t, spec = {}) {
+  const b = t.settings.border;
+  b.outer = { style: oneOf(spec.style, BORDER_STYLES, b.outer.style), width: spec.width == null ? b.outer.width : clampInt(spec.width, 0, 12), color: hex(spec.color) ?? b.outer.color };
+  return true;
+}
+
 // ---------- TSV paste ----------
 
 export function tsvToTable(text, opts = {}) {
@@ -271,15 +295,18 @@ export function buildHtml(t) {
       const cell = t.cells[r][c];
       if (cell.covered) continue;
       const isHeader = (t.headerRow && r === 0) || (t.headerCol && c === 0);
-      const top = r === 0 ? s.border.outer : (t.headerRow && r === 1 ? s.border.headerUnder : s.border.innerH);
+      const isTotals = t.totalsRow && r === t.rows - 1 && t.rows > 1;
+      const top = r === 0 ? s.border.outer : (t.headerRow && r === 1 ? s.border.headerUnder : (isTotals ? s.border.headerUnder : s.border.innerH));
       const bottom = r === t.rows - 1 ? s.border.outer : s.border.innerH;
       const left = c === 0 ? s.border.outer : s.border.innerV;
       const right = c === t.cols - 1 ? s.border.outer : s.border.innerV;
       const bg = cell.bg || (isHeader ? s.header.bg : (s.stripe.bg && r % 2 === 1 ? s.stripe.bg : null));
       const color = cell.color || (isHeader ? s.header.color : null);
-      const bold = cell.bold || (isHeader && s.header.bold);
+      const bold = cell.bold || (isHeader && s.header.bold) || isTotals;
+      let widthAttr = '', widthStyle = '';
+      if (r === 0) { const wpct = Math.max(1, Math.min(100, t.colWidths.slice(c, c + cell.colspan).reduce((a, b) => a + (Number(b) || 0), 0))); widthAttr = ` width="${wpct}%"`; widthStyle = `width:${wpct}%;`; }
       const style = [
-        font,
+        font, widthStyle,
         `border-top:${cssBorder(top)}`, `border-right:${cssBorder(right)}`, `border-bottom:${cssBorder(bottom)}`, `border-left:${cssBorder(left)}`,
         `padding:8px 10px`, `text-align:${cell.align}`, `vertical-align:${cell.valign}`,
         bold ? 'font-weight:bold' : '', cell.italic ? 'font-style:italic' : '',
@@ -288,6 +315,7 @@ export function buildHtml(t) {
       const attrs = [
         cell.colspan > 1 ? `colspan="${cell.colspan}"` : '',
         cell.rowspan > 1 ? `rowspan="${cell.rowspan}"` : '',
+        widthAttr.trim(),
         bg ? `bgcolor="${bg}"` : '',
         `align="${cell.align}"`, `valign="${cell.valign}"`,
         isHeader ? `scope="${t.headerCol && c === 0 && !(t.headerRow && r === 0) ? 'row' : 'col'}"` : '',
