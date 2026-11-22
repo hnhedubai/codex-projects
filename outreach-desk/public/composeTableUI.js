@@ -77,7 +77,7 @@ export function editorGridHtml(t) {
     const cells = [];
     for (let c = 0; c < t.cols; c++) {
       const cell = t.cells[r][c];
-      if (cell.covered) { cells.push(`<td class="ct-covered" data-r="${r}" data-c="${c}"></td>`); continue; }
+      if (cell.covered) continue; // the anchor's rowspan/colspan already spans these
       const isHead = (t.headerRow && r === 0) || (t.headerCol && c === 0);
       const span = [cell.colspan > 1 ? `colspan="${cell.colspan}"` : '', cell.rowspan > 1 ? `rowspan="${cell.rowspan}"` : ''].filter(Boolean).join(' ');
       cells.push(`<td class="${isHead ? 'ct-head ' : ''}ct-cell" data-r="${r}" data-c="${c}" contenteditable="true" ${span}>${e(cell.text)}</td>`);

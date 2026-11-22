@@ -49,7 +49,7 @@ test('editorGridHtml renders headers, row numbers, editable cells and merges', (
   assert.match(html, /ct-head/); // header cell class
   assert.match(html, /colspan="2"/);
   assert.match(html, /rowspan="2"/);
-  assert.match(html, /class="ct-covered" data-r="2" data-c="1"/);
+  assert.ok(!html.includes('ct-covered'), 'covered cells must not be emitted (anchor spans them)');
 });
 
 test('editorGridHtml escapes cell text', () => {

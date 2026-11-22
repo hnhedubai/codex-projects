@@ -42,3 +42,8 @@ test('stripSettings handles a hostile pre-existing attribute in arbitrary HTML',
   assert.ok(!clean.includes(SETTINGS_ATTR));
   assert.ok(clean.includes('<td>x</td>'));
 });
+
+test('stripSettings removes single-quoted and unquoted attributes (defence in depth)', () => {
+  assert.ok(!stripSettings(`<table ${SETTINGS_ATTR}='x'><tr><td>y</td></tr></table>`).includes(SETTINGS_ATTR));
+  assert.ok(!stripSettings(`<table ${SETTINGS_ATTR}=xyz><tr><td>y</td></tr></table>`).includes(SETTINGS_ATTR));
+});

@@ -5,7 +5,7 @@ import {leadPage,newProjectPage,findPage,importPage,leadFields,personFields} fro
 import {parseCsv,parseWorkbook} from './spreadsheet.js';
 import {createTable,buildHtml,SETTINGS_ATTR,stripSettings} from './composeTable.js';
 import {gridPickerHtml,mountTableEditor} from './composeTableUI.js';
-import {clipboardToTableHtml,recalcTable,readTableFromDom,replaceTableDom,moveTableElement,deleteTableElement,showBar} from './composeTableMessage.js';
+import {clipboardToTableHtml,recalcTable,readTableFromDom,replaceTableDom,moveTableElement,deleteTableElement,showBar,sanitizeBodyHtml} from './composeTableMessage.js';
 
 const app=document.querySelector('#app'),dialog=document.querySelector('#dialog'),toast=document.querySelector('#toast');
 let state,authenticated=false,webSearch=false,jevAvailable=false,firecrawlAvailable=false,perplexityAvailable=false,limaAvailable=false,ui={},menu='',busy=false,noticeTimer;
@@ -177,7 +177,8 @@ const isChecked=(data,key)=>data[key]!=null;
 let draftFormForTable=null,draftFormForTableForEdit=null;
 function syncDraftBody(el){
  const form=el.closest('form');if(!form)return;
- if(form.elements.body)form.elements.body.value=el.innerHTML;
+ const clean=sanitizeBodyHtml(el.innerHTML);
+ if(form.elements.body)form.elements.body.value=clean;
  if(form.dataset.form==='draft'){const data=values(form);(ui.draftEdits??={})[data.channel]=data;}
 }
 function insertTableIntoDraft(html){
@@ -495,7 +496,9 @@ app.addEventListener('paste',event=>{
  const body=event.target.closest?.('.ct-body');if(!body)return;
  const text=event.clipboardData?.getData('text/plain')||'';
  const html=clipboardToTableHtml(text);
- if(html){event.preventDefault();body.insertAdjacentHTML('beforeend',html);syncDraftBody(body);}
+ event.preventDefault();
+ if(html){body.insertAdjacentHTML('beforeend',html);syncDraftBody(body);}
+ else document.execCommand('insertText',false,text);
 });
 app.addEventListener('blur',event=>{
  const body=event.target.closest?.('.ct-body');if(!body)return;

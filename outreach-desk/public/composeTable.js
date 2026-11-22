@@ -242,7 +242,7 @@ function sanitizeSettings(s) {
     border: { outer: border(s.border?.outer, base.border.outer), innerH: border(s.border?.innerH, base.border.innerH), innerV: border(s.border?.innerV, base.border.innerV), headerUnder: border(s.border?.headerUnder, base.border.headerUnder) },
     header: { bg: hex(s.header?.bg), color: hex(s.header?.color), bold: s.header ? !!s.header.bold : true },
     stripe: { bg: hex(s.stripe?.bg) },
-    layout: { width: oneOf(s.layout?.width, ['full', 'fit', 'percent', 'px'], 'full'), align: oneOf(s.layout?.align, ALIGNMENTS, 'left'), wrap: !!s.layout?.wrap },
+    layout: { width: oneOf(s.layout?.width, ['full', 'fit', 'percent', 'px'], 'full'), align: oneOf(s.layout?.align, ALIGNMENTS, 'left'), wrap: !!s.layout?.wrap, percent: clampInt(s.layout?.percent ?? 100, 1, 100), px: px(s.layout?.px ?? MAX_WIDTH_PX) },
   };
 }
 
@@ -305,7 +305,7 @@ export function buildHtml(t) {
 // Strip the editor settings attribute so recipients never see formulas/settings.
 // Single shared function used at the export boundary (Copy / Open).
 export function stripSettings(html) {
-  return String(html ?? '').replace(new RegExp(`\\s${SETTINGS_ATTR}="[^"]*"`, 'g'), '');
+  return String(html ?? '').replace(new RegExp(`\\s${SETTINGS_ATTR}(?:="[^"]*"|='[^']*'|=[^\\s>]+)?`, 'g'), '');
 }
 
 export function sizeWarning(html) {

@@ -46,6 +46,39 @@ export function tableBarHtml() {
 
 // ---------- browser-only DOM helpers (not unit-tested) ----------
 
+// Allow-list HTML sanitiser for the draft body. Drafts are stored and re-rendered
+// across team workspaces, so any HTML that entered the editor must be cleaned of
+// scripts, event handlers, remote/embedded content and disallowed tags.
+export function sanitizeBodyHtml(html) {
+  const doc = new DOMParser().parseFromString('<body>' + String(html ?? '') + '</body>', 'text/html');
+  const ALLOWED = new Set(['TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TH', 'TD', 'DIV', 'P', 'BR', 'SPAN', 'B', 'I', 'STRONG', 'EM', 'U', 'S', 'STRIKE', 'A', 'UL', 'OL', 'LI', 'FONT', 'HR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'CODE', 'PRE', 'SUP', 'SUB', 'SMALL', 'BIG']);
+  const DROP = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'INPUT', 'BUTTON', 'TEXTAREA', 'SELECT', 'SVG', 'MATH', 'IMG', 'VIDEO', 'AUDIO', 'SOURCE', 'TEMPLATE', 'NOSCRIPT', 'BASE']);
+  const ATTRS = new Set(['style', 'colspan', 'rowspan', 'align', 'valign', 'bgcolor', 'width', 'height', 'scope', 'border', 'cellspacing', 'cellpadding', 'href', 'title', 'data-compose-table']);
+  const clean = (node) => {
+    for (const child of [...node.childNodes]) {
+      if (child.nodeType === 8) { child.remove(); continue; }        // drop comments
+      if (child.nodeType !== 1) continue;                             // keep text
+      const tag = child.tagName.toUpperCase();
+      if (DROP.has(tag)) { child.remove(); continue; }
+      if (!ALLOWED.has(tag)) {                                        // unwrap unknown tag, keep children
+        const frag = doc.createDocumentFragment();
+        while (child.firstChild) frag.appendChild(child.firstChild);
+        child.replaceWith(frag);
+        clean(node); return;                                          // re-scan this node
+      }
+      for (const attr of [...child.attributes]) {
+        const n = attr.name.toLowerCase();
+        if (!ATTRS.has(n) || n.startsWith('on')) { child.removeAttribute(attr.name); continue; }
+        if (n === 'href' && !/^(https?:|mailto:|#|\/)/i.test(attr.value.trim())) child.removeAttribute(attr.name);
+        if (n === 'style' && /expression|javascript:|url\s*\(|@import/i.test(attr.value)) child.removeAttribute(attr.name);
+      }
+      clean(child);
+    }
+  };
+  clean(doc.body);
+  return doc.body.innerHTML;
+}
+
 // Read a rendered <table> back into a model using its stored settings attribute.
 export function readTableFromDom(tableEl) {
   const attr = tableEl.getAttribute(SETTINGS_ATTR);
