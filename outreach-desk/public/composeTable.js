@@ -180,10 +180,10 @@ export function setCell(t, r, c, props = {}) {
 export function tsvToTable(text, opts = {}) {
   const rows = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
   while (rows.length && rows[rows.length - 1] === '') rows.pop();
-  const grid = rows.map((line) => line.split('\t'));
-  const cols = Math.max(1, ...grid.map((r) => r.length));
-  const t = createTable(clampInt(grid.length || 1, 1, MAX_ROWS), clampInt(cols, 1, MAX_COLS), opts);
-  for (let r = 0; r < t.rows; r++) for (let c = 0; c < t.cols; c++) t.cells[r][c].text = grid[r]?.[c] ?? '';
+  let cols = 1;
+  for (const r of rows) { const n = r.split('\t').length; if (n > cols) cols = n; } // avoid Math.max spread on huge pastes
+  const t = createTable(clampInt(rows.length || 1, 1, MAX_ROWS), clampInt(cols, 1, MAX_COLS), opts);
+  for (let r = 0; r < t.rows; r++) for (let c = 0; c < t.cols; c++) t.cells[r][c].text = rows[r]?.split('\t')[c] ?? '';
   return t;
 }
 

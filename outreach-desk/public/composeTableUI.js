@@ -56,7 +56,7 @@ export function toolbarHtml(t) {
   return `<div class="ct-toolbar">` +
     `<label>Preset<select data-action="table-preset">${opt(PRESETS, s.preset)}</select></label>` +
     `<label>Font<select data-action="table-font-family">${opt(SAFE_FONTS, s.font.family)}</select></label>` +
-    `<label>Size<select data-action="table-font-size">${opt([11, 12, 13, 14, 15, 16, 18, 20], s.font.size)}</select></label>` +
+    `<label>Size<select data-action="table-font-size">${opt([11, 12, 13, 14, 15, 16, 17, 18, 19, 20], s.font.size)}</select></label>` +
     toggle('Header row', 'headerRow', t.headerRow) + toggle('Header column', 'headerCol', t.headerCol) + toggle('Totals row', 'totalsRow', t.totalsRow) +
     `<label>Align<select data-action="table-align">${pxOpt([['left', 'Left'], ['center', 'Center'], ['right', 'Right']], 'left')}</select></label>` +
     `<label>Width<select data-action="table-layout-width">${pxOpt([['full', 'Full'], ['fit', 'Fit content'], ['percent', 'Percent'], ['px', 'Fixed px']], s.layout.width)}</select></label>` +
@@ -96,7 +96,8 @@ export function dialogHtml(t) {
 export function mountTableEditor(host, { model, onInsert } = {}) {
   if (!model) model = createTable(3, 3);
   const state = { model, sel: { r1: 0, c1: 0, r2: 0, c2: 0 } };
-  const paint = () => { host.innerHTML = dialogHtml(state.model); };
+  const clampSel = () => { const s = state.sel; s.r1 = Math.min(s.r1, state.model.rows - 1); s.c1 = Math.min(s.c1, state.model.cols - 1); s.r2 = Math.min(s.r2, state.model.rows - 1); s.c2 = Math.min(s.c2, state.model.cols - 1); };
+  const paint = () => { clampSel(); host.innerHTML = dialogHtml(state.model); };
   paint();
   const sel = () => state.sel;
 
@@ -112,7 +113,7 @@ export function mountTableEditor(host, { model, onInsert } = {}) {
     const a = b.dataset, s = sel();
     switch (a.action) {
       case 'table-toggle': applyAction(state.model, { type: a.key }); paint(); break;
-      case 'table-format': applyAction(state.model, { type: 'cell', r: s.r1, c: s.c1, props: { [a.key]: !state.model.cells[s.r1][s.c1][a.key] } }); paint(); break;
+      case 'table-format': { const cell = state.model.cells[s.r1]?.[s.c1]; if (cell) { applyAction(state.model, { type: 'cell', r: s.r1, c: s.c1, props: { [a.key]: !cell[a.key] } }); paint(); } break; }
       case 'table-merge': applyAction(state.model, { type: 'merge', ...s }); paint(); break;
       case 'table-split': applyAction(state.model, { type: 'split', r: s.r1, c: s.c1 }); paint(); break;
       case 'table-add': applyAction(state.model, { type: a.what === 'row' ? 'addRow' : 'addCol', at: a.what === 'row' ? state.model.rows : state.model.cols }); paint(); break;

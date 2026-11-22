@@ -1,5 +1,6 @@
 import {contactAllowed} from './eligibility.js';
 import {outreachLink,e,go,link,btn,header,card,empty,table,tr,blankRow,form,field,area,check,select,tabs,note,date,day,ext,attr,segment,handles,handleLabel,channels,leadChannels,marks,lifecycles,rowLink,leadState,jevFitScore} from './ui.js';
+import {sanitizeBodyHtml} from './composeTableMessage.js';
 
 export const leadFields=(l={})=>'<div class="field-row">'+field('Company name','name',l.name,{required:true})+field('Company domain','domain',l.domain,{required:true,placeholder:'example.com'})+
  field('City','city',l.city)+field('Country / region','country',l.country)+field('Category','category',l.category)+
@@ -67,9 +68,10 @@ export function leadPage(ws,p,l,tab,ui,{jevAvailable,firecrawlAvailable,perplexi
   content=card('History',rows.map(n=>'<div class="activity"><span class="small muted">'+e(date(n.at,ws.timezone))+'</span><strong>'+e(n.type)+'</strong><span>'+e(n.channel)+'</span></div>').join('')||empty('No activity for this lead yet.'));
  }
  if(tab==='drafts'){
-  const ch=ui.draftChannel||'LinkedIn',d=ui.draftEdits?.[ch]||l.drafts[ch]||{subject:'',body:''};
-  content=card('Drafts','<div class="filters">'+segment(['Email','LinkedIn','Instagram'],ch,'draft-channel')+'</div>'+
-    form('draft','<input type="hidden" name="channel" value="'+e(ch)+'">'+(ch==='Email'?field('Subject','subject',d.subject):'')+(ch==='Email'?('<textarea name="body" class="ct-store" hidden>'+e(d.body)+'</textarea><label class="ct-editor-label">Message<div class="ct-body" data-sync="body" contenteditable="true">'+d.body+'</div></label>'):area('Message','body',d.body))+
+   const ch=ui.draftChannel||'LinkedIn',d=ui.draftEdits?.[ch]||l.drafts[ch]||{subject:'',body:''};
+   const bodyHtml=ch==='Email'?sanitizeBodyHtml(d.body):d.body;
+   content=card('Drafts','<div class="filters">'+segment(['Email','LinkedIn','Instagram'],ch,'draft-channel')+'</div>'+
+    form('draft','<input type="hidden" name="channel" value="'+e(ch)+'">'+(ch==='Email'?field('Subject','subject',d.subject):'')+(ch==='Email'?('<textarea name="body" class="ct-store" hidden>'+e(bodyHtml)+'</textarea><label class="ct-editor-label">Message<div class="ct-body" data-sync="body" contenteditable="true">'+bodyHtml+'</div></label>'):area('Message','body',d.body))+
     '<div class="flex">'+btn('Start from template','draft-template','',{'data-channel':ch})+(ch==='Email'?btn('Insert table','table-insert'):'')+btn('Copy message','draft-copy')+'</div>','Save draft'));
  }
  if(tab==='enrichment'){

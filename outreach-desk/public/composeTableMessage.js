@@ -52,7 +52,7 @@ export function tableBarHtml() {
 export function sanitizeBodyHtml(html) {
   const doc = new DOMParser().parseFromString('<body>' + String(html ?? '') + '</body>', 'text/html');
   const ALLOWED = new Set(['TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TH', 'TD', 'DIV', 'P', 'BR', 'SPAN', 'B', 'I', 'STRONG', 'EM', 'U', 'S', 'STRIKE', 'A', 'UL', 'OL', 'LI', 'FONT', 'HR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'CODE', 'PRE', 'SUP', 'SUB', 'SMALL', 'BIG']);
-  const DROP = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'INPUT', 'BUTTON', 'TEXTAREA', 'SELECT', 'SVG', 'MATH', 'IMG', 'VIDEO', 'AUDIO', 'SOURCE', 'TEMPLATE', 'NOSCRIPT', 'BASE']);
+  const DROP = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'INPUT', 'BUTTON', 'TEXTAREA', 'SELECT', 'SVG', 'MATH', 'IMG', 'VIDEO', 'AUDIO', 'SOURCE', 'TEMPLATE', 'NOSCRIPT', 'BASE', 'XMP', 'LISTING', 'NOEMBED', 'NOFRAMES', 'PLAINTEXT']);
   const ATTRS = new Set(['style', 'colspan', 'rowspan', 'align', 'valign', 'bgcolor', 'width', 'height', 'scope', 'border', 'cellspacing', 'cellpadding', 'href', 'title', 'data-compose-table']);
   const clean = (node) => {
     for (const child of [...node.childNodes]) {
@@ -107,17 +107,32 @@ export function replaceTableDom(tableEl, model) {
   if (fresh) tableEl.replaceWith(fresh);
 }
 
+// The direct child of the editor body that contains the table (its movable block).
+function movableBlock(tableEl) {
+  const body = tableEl.closest('.ct-body');
+  if (!body) return tableEl; // never walk to the document root
+  let n = tableEl;
+  while (n.parentElement && n.parentElement !== body) n = n.parentElement;
+  return n;
+}
+function adjacentBlockSibling(block, direction) {
+  let s = direction === 'up' ? block.previousElementSibling : block.nextElementSibling;
+  while (s && s.classList && s.classList.contains('ct-bar')) s = direction === 'up' ? s.previousElementSibling : s.nextElementSibling;
+  return s;
+}
+
 export function moveTableElement(tableEl, direction) {
-  const parent = tableEl.parentElement; if (!parent) return false;
-  if (direction === 'up' && parent.previousElementSibling) parent.before(parent.previousElementSibling);
-  else if (direction === 'down' && parent.nextElementSibling) parent.after(parent.nextElementSibling);
-  else return false;
+  const block = movableBlock(tableEl);
+  const parent = block.parentElement; if (!parent) return false;
+  const target = adjacentBlockSibling(block, direction);
+  if (!target) return false;
+  if (direction === 'up') parent.insertBefore(block, target);
+  else parent.insertBefore(target, block);
   return true;
 }
 
 export function deleteTableElement(tableEl) {
-  const bar = tableEl.closest('div')?.querySelector?.('.ct-bar');
-  tableEl.remove(); if (bar) bar.remove();
+  movableBlock(tableEl).remove();
 }
 
 // Wire click -> bar, double-click -> reopen editor, paste -> clean table, blur -> recalc.

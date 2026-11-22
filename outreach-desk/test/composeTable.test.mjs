@@ -74,6 +74,13 @@ test('TSV paste round-trips through the model', () => {
   assert.equal(tableToTsv(t), src);
 });
 
+test('tsvToTable survives a huge paste without a spread RangeError', () => {
+  const big = 'a\n'.repeat(100000); // exceeds the old Math.max(...spread) argument limit
+  const t = tsvToTable(big);
+  assert.equal(t.rows, MAX_ROWS); // clamped
+  assert.equal(t.cols, 1);
+});
+
 test('buildHtml is email-safe: inline styles, th scope, border-collapse, width attr+style, trailing line', () => {
   const t = createTable(2, 2, { headerRow: true, preset: 'Grid' });
   setCell(t, 0, 0, { text: 'H1' }); setCell(t, 1, 1, { text: 'x' });

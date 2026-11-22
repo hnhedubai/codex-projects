@@ -387,7 +387,7 @@ async function onClick(event){
   if(type.startsWith('ct-bar')){
    const bar=button.closest('.ct-bar'),table=bar?.previousElementSibling;
    if(!table)return;
-   if(type==='ct-bar-delete'){bar.remove();table.remove();}
+   if(type==='ct-bar-delete'){deleteTableElement(table);}
    else if(type==='ct-bar-up')moveTableElement(table,'up');
    else if(type==='ct-bar-down')moveTableElement(table,'down');
    else if(type==='ct-bar-edit'){
