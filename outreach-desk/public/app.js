@@ -3,8 +3,9 @@ import {workspacePage} from './workspace.js';
 import {projectPage} from './project.js';
 import {leadPage,newProjectPage,findPage,importPage,leadFields,personFields} from './flow.js';
 import {parseCsv,parseWorkbook} from './spreadsheet.js';
-import {createTable} from './composeTable.js';
+import {createTable,buildHtml,SETTINGS_ATTR} from './composeTable.js';
 import {gridPickerHtml,mountTableEditor} from './composeTableUI.js';
+import {clipboardToTableHtml,recalcTable,readTableFromDom,replaceTableDom,moveTableElement,deleteTableElement,showBar} from './composeTableMessage.js';
 
 const app=document.querySelector('#app'),dialog=document.querySelector('#dialog'),toast=document.querySelector('#toast');
 let state,authenticated=false,webSearch=false,jevAvailable=false,firecrawlAvailable=false,perplexityAvailable=false,limaAvailable=false,ui={},menu='',busy=false,noticeTimer;
@@ -173,15 +174,26 @@ function openDialog(kind,info={}){
 const hidden=(name,value)=>'<input type="hidden" name="'+e(name)+'" value="'+e(value)+'">';
 const values=form=>Object.fromEntries(new FormData(form));
 const isChecked=(data,key)=>data[key]!=null;
-let draftFormForTable=null;
+let draftFormForTable=null,draftFormForTableForEdit=null;
+function syncDraftBody(el){
+ const form=el.closest('form');if(!form)return;
+ if(form.elements.body)form.elements.body.value=el.innerHTML;
+ if(form.dataset.form==='draft'){const data=values(form);(ui.draftEdits??={})[data.channel]=data;}
+}
 function insertTableIntoDraft(html){
  const form=draftFormForTable;
  if(!form||!form.elements.body){notify('Open an Email draft first.',true);return;}
- const body=form.elements.body;
- body.value=(body.value?body.value+'\n\n':'')+html;
- body.dispatchEvent(new Event('input',{bubbles:true}));
+ const editable=form.querySelector('.ct-body');
+ if(editable){editable.innerHTML=(editable.innerHTML?editable.innerHTML+' ':'')+html;syncDraftBody(editable);}
+ else{const body=form.elements.body;body.value=(body.value?body.value+'\n\n':'')+html;body.dispatchEvent(new Event('input',{bubbles:true}));}
  dialog.close();
  notify('Table inserted into the message.');
+}
+function tableEditCommit(html){
+ const form=draftFormForTableForEdit,el=form?._ctTableEl;
+ if(el){const wrap=document.createElement('div');wrap.innerHTML=html;const t=wrap.querySelector('table');if(t)el.replaceWith(t);}
+ const editable=form?.querySelector('.ct-body');if(editable)syncDraftBody(editable);
+ dialog.close();
 }
 function targetDraft(data){
  const p=route().p,t=ui.targetDraft||p.targeting;
@@ -358,8 +370,26 @@ async function onClick(event){
   if(type==='table-create'||type==='table-create-custom'){
    const rows=type==='table-create'?Number(d.rows):Number(dialog.querySelector('.ct-custom-rows')?.value||3);
    const cols=type==='table-create'?Number(d.cols):Number(dialog.querySelector('.ct-custom-cols')?.value||3);
+   draftFormForTableForEdit=draftFormForTable;
    dialog.innerHTML='<div class="dialog-head"><h2>Table editor</h2>'+btn('Close','close-dialog','subtle')+'</div><div class="ct-host"></div>';
    mountTableEditor(dialog.querySelector('.ct-host'),{model:createTable(rows,cols),onInsert:insertTableIntoDraft});
+   return;
+  }
+  if(type.startsWith('ct-bar')){
+   const bar=button.closest('.ct-bar'),table=bar?.previousElementSibling;
+   if(!table)return;
+   if(type==='ct-bar-delete'){bar.remove();table.remove();}
+   else if(type==='ct-bar-up')moveTableElement(table,'up');
+   else if(type==='ct-bar-down')moveTableElement(table,'down');
+   else if(type==='ct-bar-edit'){
+    const model=readTableFromDom(table);
+    if(!model){notify('Could not read this table.',true);return;}
+    const form=table.closest('form');draftFormForTableForEdit=form;if(form)form._ctTableEl=table;
+    dialog.innerHTML='<div class="dialog-head"><h2>Edit table</h2>'+btn('Close','close-dialog','subtle')+'</div><div class="ct-host"></div>';
+    mountTableEditor(dialog.querySelector('.ct-host'),{model,onInsert:tableEditCommit});
+    return;
+   }
+   const editable=table.closest('form')?.querySelector('.ct-body');if(editable)syncDraftBody(editable);
    return;
   }
   if(type==='find-example'){findDraft().query=d.value;render();return;}
@@ -433,10 +463,11 @@ app.addEventListener('input',event=>{
  try{
  const x=event.target,key=x.dataset.input;
  if(x.form?.dataset.form==='import-preview'&&x.name==='paste'){invalidateImport();ui.importPaste=x.value;}
- if(x.form?.dataset.form==='draft'&&['subject','body'].includes(x.name)){
-  const data=values(x.form);
-  (ui.draftEdits??={})[data.channel]=data;
- }
+  if(x.form?.dataset.form==='draft'&&['subject','body'].includes(x.name)){
+   const data=values(x.form);
+   (ui.draftEdits??={})[data.channel]=data;
+  }
+  if(x.classList?.contains('ct-body')){syncDraftBody(x);return;}
  if(x.classList.contains('find-query-text')){
   findDraft().query=x.value;
   x.form.querySelector('button[type=submit]').disabled=!x.value.trim();
@@ -447,6 +478,22 @@ app.addEventListener('input',event=>{
  render({restoreInput:{key,start:x.selectionStart,end:x.selectionEnd}});
  }catch(error){reportUiError(error);}
 });
+app.addEventListener('click',event=>{
+ if(event.target.closest('.ct-bar'))return;
+ const table=event.target.closest('table['+SETTINGS_ATTR+']');
+ if(table&&table.closest('.ct-body'))showBar(table);
+});
+app.addEventListener('paste',event=>{
+ const body=event.target.closest?.('.ct-body');if(!body)return;
+ const text=event.clipboardData?.getData('text/plain')||'';
+ const html=clipboardToTableHtml(text);
+ if(html){event.preventDefault();body.insertAdjacentHTML('beforeend',html);syncDraftBody(body);}
+});
+app.addEventListener('blur',event=>{
+ const body=event.target.closest?.('.ct-body');if(!body)return;
+ for(const table of body.querySelectorAll('table['+SETTINGS_ATTR+']')){const model=readTableFromDom(table);if(model){recalcTable(model);replaceTableDom(table,model);}}
+ syncDraftBody(body);
+},true);
 app.addEventListener('submit',onSubmit);
 dialog.addEventListener('submit',onSubmit);
 async function onSubmit(event){

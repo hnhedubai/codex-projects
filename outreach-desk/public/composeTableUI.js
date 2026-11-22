@@ -93,7 +93,8 @@ export function dialogHtml(t) {
 
 // ---------- live dialog wiring (browser only; not unit-tested) ----------
 
-export function mountTableEditor(host, { model = createTable(3, 3), onInsert } = {}) {
+export function mountTableEditor(host, { model, onInsert } = {}) {
+  if (!model) model = createTable(3, 3);
   const state = { model, sel: { r1: 0, c1: 0, r2: 0, c2: 0 } };
   const paint = () => { host.innerHTML = dialogHtml(state.model); };
   paint();

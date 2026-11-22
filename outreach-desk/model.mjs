@@ -479,7 +479,7 @@ export function perform(state,type,input={}){
     l.notes.unshift({id:id(),text,channel:tidy(input.channel,30)||'General',at:now(),author:ws.members[0].name});
   }else if(type==='draft'){
     if(!CHANNELS.includes(input.channel))invalid('Channel unavailable.');
-    l.drafts[input.channel]={subject:tidy(input.subject,300),body:tidy(input.body,10000),at:now()};
+    l.drafts[input.channel]={subject:tidy(input.subject,300),body:tidy(input.body,200000),at:now()};
   }else if(type==='erase'){
     if(input.confirm!=='ERASE')invalid('Type ERASE to confirm.');
     for(const ch of CHANNELS)for(const h of handles(l,ch)){

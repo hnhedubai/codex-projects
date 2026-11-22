@@ -69,7 +69,7 @@ export function leadPage(ws,p,l,tab,ui,{jevAvailable,firecrawlAvailable,perplexi
  if(tab==='drafts'){
   const ch=ui.draftChannel||'LinkedIn',d=ui.draftEdits?.[ch]||l.drafts[ch]||{subject:'',body:''};
   content=card('Drafts','<div class="filters">'+segment(['Email','LinkedIn','Instagram'],ch,'draft-channel')+'</div>'+
-   form('draft','<input type="hidden" name="channel" value="'+e(ch)+'">'+(ch==='Email'?field('Subject','subject',d.subject):'')+area('Message','body',d.body)+
+    form('draft','<input type="hidden" name="channel" value="'+e(ch)+'">'+(ch==='Email'?field('Subject','subject',d.subject):'')+(ch==='Email'?('<textarea name="body" class="ct-store" hidden>'+e(d.body)+'</textarea><label class="ct-editor-label">Message<div class="ct-body" data-sync="body" contenteditable="true">'+d.body+'</div></label>'):area('Message','body',d.body))+
     '<div class="flex">'+btn('Start from template','draft-template','',{'data-channel':ch})+(ch==='Email'?btn('Insert table','table-insert'):'')+btn('Copy message','draft-copy')+'</div>','Save draft'));
  }
  if(tab==='enrichment'){

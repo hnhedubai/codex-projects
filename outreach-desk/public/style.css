@@ -300,3 +300,12 @@ fieldset{border:0;padding:0;margin:0;min-width:0}
 .ct-cell:focus{outline:2px solid var(--accent);outline-offset:-2px}
 .ct-head{background:var(--peach);font-weight:650}
 .ct-covered{background:repeating-linear-gradient(45deg,var(--canvas),var(--canvas) 6px,var(--line-light) 6px,var(--line-light) 12px)}
+/* In-message table editor (Phase 4) */
+.ct-store{display:none}
+.ct-editor-label{display:flex;flex-direction:column;gap:6px}
+.ct-body{min-height:160px;border:1px solid var(--line);border-radius:var(--radius);padding:12px;background:var(--paper);font-size:14px;line-height:21px;overflow:auto}
+.ct-body:focus{outline:2px solid var(--accent);outline-offset:-2px}
+.ct-body table{max-width:100%}
+.ct-bar{display:flex;gap:6px;align-items:center;padding:6px 0}
+.ct-bar-btn{padding:2px 8px;font-size:12px}
+.ct-bar-drag{cursor:grab;color:var(--soft);padding:0 6px;user-select:none}
